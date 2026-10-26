@@ -13,6 +13,9 @@
     "migrate:deploy": "prisma migrate deploy",
     "seed:ips": "tsx src/seed/ips.ts"
   },
+  "overrides": {
+    "@fastify/static": "10.1.0"
+  },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
     "@fastify/swagger": "^9.9.2",

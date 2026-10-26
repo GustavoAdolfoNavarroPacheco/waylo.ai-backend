@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: waylo
+          POSTGRES_PASSWORD: waylo-ci-password
+          POSTGRES_DB: waylo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U waylo -d waylo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      PORT: "3001"
+      DATABASE_URL: postgresql://waylo:waylo-ci-password@127.0.0.1:5432/waylo_test?schema=public
+      APP_SECRET: test-app-secret-de-al-menos-32-caracteres
+      IPS_TOKEN_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      SESSION_TTL_DAYS: "1"
+      CONFIANZA_BASE_URL: http://localhost:8000
+      CONFIANZA_AGENT_KEY: test-agent-api-key
+      XAI_API_KEY: test-xai-key
+      LLM_BASE_URL: http://localhost:9999/v1
+      EMERGENCY_PHONE: "123"
+      MENTAL_HEALTH_PHONE: "106"
+      VOICE_BUDGET_MONTHLY_USD: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Apply test migrations
+        run: npm run migrate:deploy
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

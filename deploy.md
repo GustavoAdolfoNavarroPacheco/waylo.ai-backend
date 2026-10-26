@@ -1,5 +1,8 @@
 # Despliegue — VPS + Docker Compose
 
+> Para una función HTTP en Vercel, consulta [`docs/vercel-deployment.md`](docs/vercel-deployment.md).
+> El VPS sigue siendo el despliegue canónico para procesos persistentes y WebSocket.
+
 ## Servicios
 
 | servicio | imagen | expuesto |

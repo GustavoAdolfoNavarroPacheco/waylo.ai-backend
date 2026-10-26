@@ -5,7 +5,7 @@ import type { Config } from '../src/config';
 import { createPrisma } from '../src/lib/prisma';
 
 // Los tests de integración usan DATABASE_URL: debe apuntar a la BD de PRUEBAS
-// (p. ej. postgresql://thom@127.0.0.1:5433/waylo_test).
+// (p. ej. postgresql://waylo:CHANGE_ME@127.0.0.1:5434/waylo_test).
 export function requireTestDatabase(): string {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('Falta DATABASE_URL: debe apuntar a la BD de pruebas (waylo_test)');

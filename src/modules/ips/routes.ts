@@ -12,7 +12,7 @@ const linkRequestSchema = z.object({
   document_type: z.string().trim().min(2).max(20),
   document_number: z.string().trim().min(3).max(40),
   eps: z.string().trim().min(2).max(120).nullish(), // Confianza lo exige
-  activation_code: z.string().regex(/^\d{6}$/, 'El código de activación son6 dígitos'),
+  activation_code: z.string().regex(/^\d{6}$/, 'El código de activación son 6 dígitos'),
   // Propuesta pendiente de aceptar en el contrato: slug de la IPS (obligatorio si hay >1 activa)
   ips_id: z.string().trim().min(1).max(64).optional(),
 });

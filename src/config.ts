@@ -8,7 +8,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   DATABASE_URL: z.string().min(1),
   APP_SECRET: z.string().min(32),
-  IPS_TOKEN_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'IPS_TOKEN_KEY debe ser64 hex (32 bytes)'),
+  IPS_TOKEN_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'IPS_TOKEN_KEY debe ser 64 hex (32 bytes)'),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
   CONFIANZA_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().default('http://localhost:8000')),
   XAI_API_KEY: z.string().default(''),

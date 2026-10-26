@@ -1,140 +1,103 @@
-# Guía de Levantamiento para Testeo Local (Waylo.ai)
+# Guía de levantamiento local
 
-Guía paso a paso para levantar y verificar todos los servicios de Waylo (backend, base de datos y frontend) para pruebas locales en el navegador.
+Cómo levantar el stack completo de Waylo (backend, base de datos y frontend) para probar en el navegador.
 
----
+## 1. Servicios y puertos
 
-## 1. Servicios y Puertos
-
-| Servicio | Tecnología | URL / Puerto | Función |
+| Servicio | Tecnología | URL / puerto | Función |
 |---|---|---|---|
-| **Base de Datos** | Docker (`pgvector/pgvector:pg16`) | `127.0.0.1:5434` | PostgreSQL con extensión pgvector |
-| **Backend API** | Fastify + Node 24 (Docker o local) | `http://localhost:3001` | API canónica, auth, IPS y orquestación |
-| **Swagger UI** | `@fastify/swagger-ui` | `http://localhost:3001/docs` | Consola interactiva del API OpenAPI |
-| **Frontend Web** | Next.js 15 (Turbopack) | `http://localhost:3000` | UI de usuario (landing, chat, voz, login) |
+| Base de datos | Docker (`pgvector/pgvector:pg16`) | `127.0.0.1:5434` | PostgreSQL con extensión pgvector |
+| Backend API | Fastify + Node 24 (Docker o local) | `http://localhost:3001` | API canónica, auth, IPS |
+| Swagger UI | `@fastify/swagger-ui` | `http://localhost:3001/docs` | Consola interactiva del contrato |
+| Frontend | Next.js (Turbopack) | `http://localhost:3000` | Landing, chat, voz y cuenta |
 
----
+`db` y `api` solo se publican en localhost; en el VPS el tráfico público entra por Caddy (ver `deploy.md`).
 
-## 2. Variables de Entorno Requeridas
+## 2. Variables de entorno
 
-### A. Backend (`waylo.ai-backend/.env`)
+### Backend (`waylo.ai-backend/.env`)
+
+Copia `.env.example` y completa los valores. Los secretos **no se versionan**.
+
 ```bash
 NODE_ENV=development
 PORT=3001
 
-# Postgres
-DATABASE_URL="postgresql://thom@127.0.0.1:5433/waylo_dev"
-POSTGRES_PASSWORD=20a3b0a40a4f4fdb1fe59855a2a801b8ed0b
+# Postgres del compose
+DATABASE_URL="postgresql://waylo:<POSTGRES_PASSWORD>@127.0.0.1:5434/waylo"
+POSTGRES_PASSWORD=<contraseña>
 
 # Secretos (64 caracteres hex)
-APP_SECRET=f7c3e53f1ca3eed6aa712995ca57bbdeee3b1d5f9bc7816b84c44fb7ce84e008
-IPS_TOKEN_KEY=7bac76ce1e69ebda84519d7ec355718d1266526fd5c7e61794b323d7a5c97f42
+# node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+APP_SECRET=<hex de 64>
+IPS_TOKEN_KEY=<hex de 64>
 
 # Sesión
 SESSION_TTL_DAYS=30
 
-# IPS Confianza (remota en Vercel)
-CONFIANZA_BASE_URL="https://confianza-ips-backend.vercel.app"
-CONFIANZA_AGENT_KEY=
+# IPS Confianza
+CONFIANZA_BASE_URL=<url de la IPS>
+CONFIANZA_AGENT_KEY=<opcional>
 
-# Grok / xAI
-XAI_API_KEY=pk_6Vk8EuEwOkdHBsDIm63oPasM7yPQXp0mGSy3m3ns
-LLM_BASE_URL=https://api.reto.pltk.mx/v1
+# LLM (fase 1)
+XAI_API_KEY=<api key>
+LLM_BASE_URL=<base url compatible con OpenAI>
+LLM_MODEL=<modelo, p. ej. grok-4.6>
 
-# Números de emergencia
-EMERGENCY_PHONE=123
-MENTAL_HEALTH_PHONE=106
+# Números de emergencia por país
+EMERGENCY_PHONE=<número>
+MENTAL_HEALTH_PHONE=<número>
 VOICE_BUDGET_MONTHLY_USD=10
 ```
 
-### B. Frontend (`waylo.ai-frontend/.env`)
+### Frontend ([waylo.ai](https://github.com/GustavoAdolfoNavarroPacheco/waylo.ai))
+
+El frontend gestiona sus propias variables (proveedor de LLM, conexión a su base de datos y secreto de sesión). Consúltalas en el README de ese repositorio; ninguna debe compartirse con el backend salvo la URL del API.
+
+## 3. Pasos
+
+### Paso 1: base de datos y backend
+
 ```bash
-RETO_KEY=pk_306LPZvy49YE15Gj9B3V52Teg1QlLt4cYMAJJ3kA
-RETO_BASE_URL=https://api.reto.pltk.mx/v1
-RETO_MODEL=grok-4.6
-AUTH_SECRET=f7c3e53f1ca3eed6aa712995ca57bbdeee3b1d5f9bc7816b84c44fb7ce84e008
-DATABASE_URL="postgresql://waylo:20a3b0a40a4f4fdb1fe59855a2a801b8ed0b@127.0.0.1:5434/waylo"
-```
-
----
-
-## 3. Pasos de Levantamiento
-
-### Paso 1: Base de datos y Backend (Docker Compose)
-En la carpeta `waylo.ai-backend`:
-```bash
-cd /home/thom/Documents/Github/waylo.ai-backend
-
-# Levanta Postgres (db) y Backend Fastify (api)
+cd waylo.ai-backend
 docker compose up -d
 
-# Inicializa el catálogo de IPS (primera vez o tras recrear volumen)
+# Catálogo de IPS (primera vez o tras recrear el volumen)
 docker compose exec api node dist/seed/ips.js
 ```
 
-### Paso 2: Frontend (Next.js)
-En la carpeta `waylo.ai-frontend`:
+### Paso 2: frontend
+
 ```bash
-cd /home/thom/Documents/Github/waylo.ai-frontend
-
-# Aplica migraciones locales si es la primera vez
-node --env-file=.env scripts/migrate.mjs
-
-# Inicia el servidor de desarrollo
+git clone https://github.com/GustavoAdolfoNavarroPacheco/waylo.ai
+cd waylo.ai
+npm install
 npm run dev
 ```
 
----
-
-## 4. Verificación Rápida
-
-Ejecutar estos comandos para validar que todo responde:
+## 4. Verificación rápida
 
 ```bash
-# 1. Backend activo
-curl -i http://localhost:3001/health
-# Debe responder: HTTP/1.1 200 OK -> {"status":"ok"}
-
-# 2. Swagger UI activo
-curl -i http://localhost:3001/docs
-# Debe responder: HTTP/1.1 200 OK
-
-# 3. Frontend activo
-curl -i http://localhost:3000/inicio
-# Debe responder: HTTP/1.1 200 OK
-
-# 4. Triage con Grok respondiendo
-curl -s -X POST http://localhost:3000/api/triage \
-  -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Tengo dolor de cabeza leve"}]}'
-# Debe devolver JSON con orientacion a "Medicina General"
+curl -i http://localhost:3001/health          # 200 {"status":"ok"}
+curl -i http://localhost:3001/docs            # 200 Swagger UI
+curl -i http://localhost:3001/docs/json       # 200 contrato OpenAPI
+curl -i http://localhost:3000                 # 200 frontend
 ```
 
----
+Con el frontend levantado, el recorrido mínimo es: registro → consentimiento → vincular IPS (código mock `123456`) → `/me` → logout → baja de cuenta.
 
-## 5. URLs para Navegador
+## 5. URLs
 
-- **Waylo App**: [http://localhost:3000](http://localhost:3000)
-- **Chat Directo**: [http://localhost:3000/chat](http://localhost:3000/chat)
-- **Documentación API**: [http://localhost:3001/docs](http://localhost:3001/docs)
+- App: `http://localhost:3000`
+- Documentación del API: `http://localhost:3001/docs`
 
----
-
-## 6. Comandos de Diagnóstico y Mantenimiento
+## 6. Diagnóstico
 
 ```bash
-# Ver estado de los contenedores backend
-docker compose ps
-
-# Ver logs en vivo del backend
-docker compose logs -f api
-
-# Recrear backend si cambias variables en .env
-docker compose up -d --no-deps api
-
-# Correr tests del backend
-npm test
-
-# Correr tests del frontend
-npm --prefix ../waylo.ai-frontend test
+docker compose ps                 # estado de los contenedores
+docker compose logs -f api        # migraciones + arranque
+docker compose up -d --no-deps api  # recrear el backend tras cambiar variables
+npm test                          # tests del backend (requiere BASE de pruebas)
 ```
+
+Los tests de integración necesitan una base de datos **de pruebas** (`waylo_test`) y la variable `DATABASE_URL` apuntando a ella; nunca se ejecutan contra la base de desarrollo.

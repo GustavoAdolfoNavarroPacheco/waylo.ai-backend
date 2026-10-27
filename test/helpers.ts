@@ -21,6 +21,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     IPS_TOKEN_KEY: 'ab'.repeat(32),
     SESSION_TTL_DAYS: 1,
     CONFIANZA_BASE_URL: 'http://localhost:9',
+    CONFIANZA_ENABLED: false,
     XAI_API_KEY: '',
     EMERGENCY_PHONE: '',
     MENTAL_HEALTH_PHONE: '',

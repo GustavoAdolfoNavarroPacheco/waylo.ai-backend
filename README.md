@@ -62,6 +62,8 @@ Guía ampliada (backend + frontend + verificación): [`TESTING_SETUP.md`](./TEST
 | `SESSION_TTL_DAYS` | no | Duración de la sesión web (default `30`) |
 | `CONFIANZA_BASE_URL` | no | URL de la IPS (adaptador `confianza`) |
 | `CONFIANZA_AGENT_KEY` | no | Header `X-Confianza-Agent-Key` si la IPS lo configuró |
+| `CONFIANZA_ENABLED` | no | Activa el adaptador real de Confianza; `false` mantiene el catálogo desactivado |
+| `WAYLO_INTERNAL_KEY` | no | Secreto compartido con el BFF de `waylo.ai`; protege `/internal/ips/*` |
 | `XAI_API_KEY` | no | API key del LLM (fase 1) |
 | `LLM_BASE_URL` | no | Endpoint compatible con OpenAI (fase 1) |
 | `EMERGENCY_PHONE` | no | Número de emergencias del país |
@@ -97,6 +99,16 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 | `WS` | `/ws/chat` | Fase 2 | Chat y voz (contrato) |
 
 El contrato canónico es [`docs/waylo-api.openapi.yaml`](./docs/waylo-api.openapi.yaml); el frontend genera sus tipos desde ese archivo. Swagger UI lo sirve tal cual, así que la documentación y el contrato nunca se desfasan.
+
+### Adaptador ciudadano para Waylo
+
+El frontend ciudadano no llama directamente a este servicio. Su Route Handler server-side funciona como BFF y usa `WAYLO_INTERNAL_KEY` para consultar estas rutas privadas:
+
+- `GET/POST/DELETE /internal/ips/link`: consultar, crear o eliminar el vínculo por `external_subject`.
+- `GET /internal/ips/patient`: obtener el perfil mínimo disponible en la IPS.
+- `GET /internal/ips/appointments`: obtener las citas actuales.
+
+El backend cifra el token devuelto por Confianza, no persiste el código de activación ni la cédula, y marca el vínculo como inválido cuando la IPS rechaza el token. El detalle del contrato y la secuencia completa están en [`docs/001-ips-integration-mvp-prd.md`](./docs/001-ips-integration-mvp-prd.md).
 
 ## Scripts
 

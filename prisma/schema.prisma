@@ -96,6 +96,7 @@ model Ips {
   active          Boolean     @default(true)
 
   links       IpsLink[]
+  externalLinks ExternalIpsLink[]
   cacheEntries CacheEntry[]
   ragChunks   RagChunk[]
 
@@ -122,6 +123,24 @@ model IpsLink {
   ips  Ips  @relation(fields: [ipsId], references: [id], onDelete: Restrict)
 
   @@map("ips_links")
+}
+
+/// external_ips_links — vínculo creado por el frontend ciudadano mediante el BFF.
+/// No depende de la autenticación legacy de este backend.
+model ExternalIpsLink {
+  id                   String        @id @default(cuid())
+  externalSubject      String        @unique @map("external_subject")
+  ipsId                String        @map("ips_id")
+  patientId            Int           @map("patient_id")
+  accessTokenEncrypted String?       @map("access_token_encrypted")
+  tokenExpiresAt       DateTime?     @map("token_expires_at")
+  status               IpsLinkStatus @default(ACTIVE)
+  linkedAt             DateTime      @default(now()) @map("linked_at")
+  statusChangedAt      DateTime      @default(now()) @map("status_changed_at")
+
+  ips Ips @relation(fields: [ipsId], references: [id], onDelete: Restrict)
+
+  @@map("external_ips_links")
 }
 
 /// sessions — sesión de la web app. El cliente solo lleva la cookie; aquí el hash.

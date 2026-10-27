@@ -35,7 +35,9 @@ export class ConfianzaIpsClient implements IpsClient {
   ) {}
 
   private url(path: string): string {
-    return `${this.opts.baseUrl.replace(/\/+$/, '')}${path}`;
+    // Resolve from the origin so a legacy value ending in `/api/v1/` cannot
+    // produce `/api/v1/api/v1/...`.
+    return new URL(path, this.opts.baseUrl).toString();
   }
 
   private agentHeaders(): Record<string, string> {

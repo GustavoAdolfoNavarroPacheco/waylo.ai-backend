@@ -1,5 +1,5 @@
-// Registro de IPS por defecto: mock activo (dev local) + confianza inactivo
-// (se activa cuando haya servidor real con el contrato mínimo cerrado).
+// Registro de IPS por defecto: mock activo (dev local) + confianza controlable
+// explícitamente con CONFIANZA_ENABLED.
 // Uso: npm run seed:ips  (requiere DATABASE_URL)
 import { existsSync } from 'node:fs';
 import { createPrisma } from '../lib/prisma';
@@ -25,7 +25,10 @@ async function main(): Promise<void> {
     });
     const confianza = await prisma.ips.upsert({
       where: { slug: 'confianza' },
-      update: {},
+      update: {
+        active: process.env.CONFIANZA_ENABLED === 'true',
+        baseUrl: process.env.CONFIANZA_BASE_URL ?? 'http://localhost:8000',
+      },
       create: {
         name: 'Confianza IPS',
         slug: 'confianza',
@@ -38,7 +41,7 @@ async function main(): Promise<void> {
         },
         serviceIds: [],
         ragDir: 'rag/confianza',
-        active: false,
+        active: process.env.CONFIANZA_ENABLED === 'true',
       },
     });
     console.log(

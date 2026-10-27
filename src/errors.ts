@@ -8,6 +8,7 @@ export type ErrorCode =
   | 'LINK_INVALID'
   | 'NO_ACTIVE_LINK'
   | 'NO_LOCATION'
+  | 'INTEGRATION_UNAVAILABLE'
   | 'IPS_UNAVAILABLE'
   | 'LLM_UNAVAILABLE'
   | 'VALIDATION'
@@ -33,6 +34,8 @@ export const errors = {
   linkExists: () => new AppError(409, 'LINK_EXISTS', 'Ya existe un vínculo activo: desvincula primero'),
   linkInvalid: (message = 'Código o documento inválidos') => new AppError(401, 'LINK_INVALID', message),
   noActiveLink: (message = 'Sin vínculo activo con ninguna IPS') => new AppError(409, 'NO_ACTIVE_LINK', message),
+  integrationUnavailable: (message = 'La integración interna no está configurada') =>
+    new AppError(503, 'INTEGRATION_UNAVAILABLE', message),
   ipsUnavailable: (message = 'La IPS no respondió') => new AppError(503, 'IPS_UNAVAILABLE', message),
   validation: (message: string) => new AppError(422, 'VALIDATION', message),
   internal: (message = 'Error interno') => new AppError(500, 'INTERNAL', message),

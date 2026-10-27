@@ -16,6 +16,7 @@ import { registerHealthRoutes } from './modules/health/routes';
 import { registerAuthRoutes } from './modules/auth/routes';
 import { registerConsentRoutes } from './modules/consent/routes';
 import { registerIpsRoutes } from './modules/ips/routes';
+import { registerExternalIpsRoutes } from './modules/ips/external';
 import { registerMeRoutes } from './modules/me/routes';
 
 export interface AppDeps {
@@ -73,6 +74,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerAuthRoutes(app, deps);
   registerConsentRoutes(app, deps);
   registerIpsRoutes(app, deps);
+  registerExternalIpsRoutes(app, deps);
   registerMeRoutes(app, deps);
 
   return app;

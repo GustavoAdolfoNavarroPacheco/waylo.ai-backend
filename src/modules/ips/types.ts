@@ -55,3 +55,5 @@ export interface ContractMapping {
   headerName?: string; // auth HEADER_KEY: nombre del header (si la IPS lo usa)
   agentKeyEnv?: string; // variable de entorno con la key del agente (el secreto NO vive en la BD)
 }
+
+export type ExternalIpsLinkStatus = 'none' | 'active' | 'expired' | 'unlinked' | 'deactivated';

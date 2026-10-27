@@ -1,8 +1,8 @@
 # Waylo Backend
 
-API de Waylo: orienta al paciente (N0–N4) y ejecuta la acción en su IPS — cita general, cita prioritaria o sede de urgencias más cercana. El frontend nunca habla con la IPS ni con el proveedor de IA: todo pasa por este backend.
+API de Waylo para cuentas, sesiones, consentimiento, perfiles y acceso server-to-server a la IPS. El adaptador normaliza la lectura del paciente y sus citas; las operaciones de escritura de citas no están implementadas en este backend.
 
-> **Estado: Fase 0.** Cuentas, consentimiento, vínculo con la IPS y perfil fusionado están operativos. Citas, hospitales cercanos, calendario, chat y voz llegan en las fases 1, 2 y 5 (el contrato ya los define).
+> **Estado: Fase 0.** Cuentas, consentimiento, vínculo con la IPS y perfil fusionado están operativos. Chat, voz, triage, hospitales y calendario no forman parte de las rutas REST implementadas actualmente.
 
 ## Stack
 
@@ -93,12 +93,11 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 | `POST` | `/ips/link` | ✅ | Vincular con documento + código de activación |
 | `DELETE` | `/ips/link` | ✅ | Desvincular |
 | `GET` | `/me` | ✅ | Perfil fusionado local ↔ IPS (`source` por campo) |
-| `GET` | `/appointments` | Fase 1 | Citas del paciente (contrato) |
-| `GET` | `/hospitals/nearby` | Fase 1 | Urgencias cercanas (contrato) |
-| `POST/DELETE` | `/calendar/connect` | Fase 5 | Google Calendar (contrato) |
-| `WS` | `/ws/chat` | Fase 2 | Chat y voz (contrato) |
+| `GET/POST/DELETE` | `/internal/ips/link` | ✅ | Estado, alta y baja de vínculo server-to-server |
+| `GET` | `/internal/ips/patient` | ✅ | Paciente normalizado para la identidad externa |
+| `GET` | `/internal/ips/appointments` | ✅ | Citas normalizadas, solo lectura |
 
-El contrato canónico es [`docs/waylo-api.openapi.yaml`](./docs/waylo-api.openapi.yaml); el frontend genera sus tipos desde ese archivo. Swagger UI lo sirve tal cual, así que la documentación y el contrato nunca se desfasan.
+El contrato canónico es [`docs/waylo-api.openapi.yaml`](./docs/waylo-api.openapi.yaml); describe las rutas que registra Fastify. `/docs` y `/docs/json` lo sirven tal cual. El servidor OpenAPI es relativo, por lo que “Try it out” usa el mismo origen desde el que se abrió Swagger, tanto en local como en Vercel. Detalles de seguridad, parámetros, esquemas, ejemplos y errores: [`docs/002-swagger-openapi-prd.md`](./docs/002-swagger-openapi-prd.md).
 
 ### Adaptador ciudadano para Waylo
 

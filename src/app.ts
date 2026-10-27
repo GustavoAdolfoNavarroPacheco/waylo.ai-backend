@@ -60,8 +60,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Ruta no encontrada' } }),
   );
 
-  // Swagger UI en /docs, sirviendo el contrato canónico tal cual
-  // (docs/waylo-api.openapi.yaml: única fuente de verdad; el frontend genera sus tipos de ahí)
+  // Swagger UI en /docs, sirviendo el contrato OpenAPI canónico tal cual.
+  // Su server relativo conserva el origen actual en local, preview y producción.
   const openapi = parse(readFileSync(resolve(__dirname, '../docs/waylo-api.openapi.yaml'), 'utf8'));
   await app.register(swagger, { openapi });
   await app.register(swaggerUi, {

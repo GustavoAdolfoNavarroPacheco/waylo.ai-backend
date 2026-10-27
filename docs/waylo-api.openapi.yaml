@@ -1,298 +1,392 @@
-# Waylo API — contrato interno entre waylo-frontend (Next.js) y waylo-backend (Fastify).
-# Fuente de verdad de tipos: el frontend genera los suyos desde este archivo en CI.
-# NOTA: OpenAPI no cubre WebSockets → los eventos de /ws/chat están en x-waylo-websocket.
-# Alcance del MVP: sin recuperación de contraseña y sin verificación de email.
 openapi: 3.1.0
 info:
-  title: Waylo API
-  description: >
-    API interna de Waylo. El frontend nunca habla con xAI ni con la IPS:
-    todo pasa por este backend. Sesión por cookie httpOnly (`waylo_session`)
-    usada tanto en REST como al abrir el WebSocket.
-  version: 0.1.0
+  title: Waylo Backend API
+  version: 0.2.0
+  summary: API REST del backend de Waylo
+  description: |
+    Contrato del servidor Fastify desplegado en este repositorio. La URL del
+    servidor es relativa: Swagger ejecuta solicitudes contra el mismo origen
+    desde el que se abrió `/docs` (local, preview o producción).
+
+    Las rutas de usuario usan la cookie de sesión httpOnly `waylo_session`.
+    Las rutas `/internal/*` son exclusivamente servidor a servidor y requieren
+    `X-Waylo-Internal-Key`; nunca deben llamarse desde un navegador.
+
+    Esta especificación solo incluye rutas REST registradas actualmente. Chat,
+    voz, triage, hospitales y calendario no están implementados en este servidor.
 servers:
-  - url: http://localhost:3001
-    description: desarrollo
+  - url: /
+    description: Mismo origen de esta instancia de Waylo Backend
+tags:
+  - name: Sistema
+    description: Estado operativo del servicio.
+  - name: Autenticación
+    description: Registro, inicio y cierre de sesiones por cookie.
+  - name: Consentimiento
+    description: Registro de aceptación del aviso de tratamiento de datos.
+  - name: Perfil
+    description: Perfil de la cuenta Waylo y estado de vínculo legacy con IPS.
+  - name: Integración IPS interna
+    description: |
+      Integración privada para el BFF de Waylo. Requiere la clave de servidor
+      configurada como `WAYLO_INTERNAL_KEY` en este backend. No exponerla al cliente.
 security:
   - sessionCookie: []
-
 paths:
   /health:
     get:
-      summary: Health del backend (operación/despliegue)
+      tags: [Sistema]
+      operationId: getHealth
+      summary: Consultar salud del proceso
+      description: Confirma que la instancia responde. No comprueba conectividad de base de datos ni disponibilidad de IPS.
       security: []
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Proceso disponible.
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [ok]
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+              example: { status: ok }
 
   /auth/register:
     post:
-      summary: Crear cuenta (Sign Up)
+      tags: [Autenticación]
+      operationId: registerAccount
+      summary: Crear una cuenta Waylo
+      description: |
+        Normaliza el correo a minúsculas, crea la cuenta y un perfil vacío,
+        abre una sesión y devuelve la cookie `waylo_session` httpOnly. El cuerpo
+        no incluye nombre ni perfil clínico. El correo debe ser único.
+      security: []
       requestBody:
         required: true
+        description: Credenciales iniciales de la cuenta.
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/RegisterRequest" }
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+            example: { email: paciente@example.com, password: 'Clave-segura-123' }
       responses:
-        "201":
-          description: Cuenta creada; establece la cookie de sesión
+        '201':
+          description: Cuenta creada y sesión iniciada.
           headers:
             Set-Cookie:
-              description: waylo_session=<token>; HttpOnly; SameSite=Lax; Path=/
+              description: Cookie de sesión httpOnly, SameSite=Lax, Path=/; Secure en producción.
               schema: { type: string }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/UserResponse" }
-        "409":
-          description: El email ya existe
+              schema: { $ref: '#/components/schemas/UserResponse' }
+              example: { id: clx123abc, email: paciente@example.com }
+        '409':
+          description: El correo ya está registrado.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "422": { $ref: "#/components/responses/ValidationError" }
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: EMAIL_TAKEN, message: El email ya existe } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /auth/login:
     post:
-      summary: Entrar al sistema (Log In)
+      tags: [Autenticación]
+      operationId: login
+      summary: Iniciar sesión
+      description: Verifica las credenciales, crea una nueva sesión y establece `waylo_session`. La contraseña nunca se devuelve.
+      security: []
       requestBody:
         required: true
+        description: Correo y contraseña de la cuenta existente.
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/LoginRequest" }
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+            example: { email: paciente@example.com, password: 'Clave-segura-123' }
       responses:
-        "200":
-          description: Sesión iniciada; establece la cookie
+        '200':
+          description: Autenticación correcta.
+          headers:
+            Set-Cookie:
+              description: Cookie de sesión httpOnly, SameSite=Lax, Path=/; Secure en producción.
+              schema: { type: string }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/UserResponse" }
-        "401":
-          description: Credenciales inválidas
+              schema: { $ref: '#/components/schemas/UserResponse' }
+              example: { id: clx123abc, email: paciente@example.com }
+        '401':
+          description: Correo o contraseña incorrectos.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "422": { $ref: "#/components/responses/ValidationError" }
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: INVALID_CREDENTIALS, message: Credenciales inválidas } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /auth/logout:
     post:
-      summary: Salir del sistema (cierra sesión y borra la cookie)
+      tags: [Autenticación]
+      operationId: logout
+      summary: Cerrar la sesión actual
+      description: Elimina la sesión asociada a la cookie y la expira en el navegador.
       responses:
-        "204": { description: Sesión cerrada }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+        '204': { description: Sesión cerrada; no hay cuerpo de respuesta. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /auth/account:
     delete:
-      summary: >
-        Darse de baja = borrado total en Waylo (users, perfil, vínculo, sesiones,
-        caché y calendario). Las citas NO se tocan: permanecen en la IPS y se
-        devuelven en la respuesta para el aviso previo.
+      tags: [Autenticación]
+      operationId: deleteAccount
+      summary: Eliminar la cuenta Waylo
+      description: |
+        Elimina los datos de la cuenta Waylo y la sesión. Si existe un vínculo
+        IPS activo, intenta consultar las citas para incluirlas en la respuesta.
+        Las citas permanecen en la IPS y no se cancelan. Si la IPS no responde,
+        la eliminación continúa y `appointments_left_in_ips` puede venir vacío.
       responses:
-        "200":
-          description: Cuenta borrada
+        '200':
+          description: Cuenta eliminada. Las citas listadas siguen en la IPS.
+          headers:
+            Set-Cookie:
+              description: La cookie `waylo_session` se expira.
+              schema: { type: string }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/DeleteAccountResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+              schema: { $ref: '#/components/schemas/DeleteAccountResponse' }
+              example:
+                deleted: true
+                appointments_left_in_ips: []
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /consent:
     post:
-      summary: Registrar la aceptación del aviso (Ley 1581) — queda en `consents`
+      tags: [Consentimiento]
+      operationId: createConsent
+      summary: Registrar aceptación del aviso de tratamiento de datos
+      description: Guarda la versión aceptada y la fecha. Se conserva una prueba seudonimizada incluso tras eliminar la cuenta.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/ConsentRequest" }
+            schema: { $ref: '#/components/schemas/ConsentRequest' }
+            example: { text_version: '2026-10-v1' }
       responses:
-        "201":
-          description: Consentimiento registrado
+        '201':
+          description: Consentimiento registrado.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ConsentResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "422": { $ref: "#/components/responses/ValidationError" }
+              schema: { $ref: '#/components/schemas/ConsentResponse' }
+              example: { text_version: '2026-10-v1', granted_at: '2026-10-27T14:30:00.000Z' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /ips/link:
     get:
-      summary: Estado del vínculo con la IPS
+      tags: [Perfil]
+      operationId: getIpsLink
+      summary: Consultar vínculo IPS de la cuenta actual
+      description: Devuelve `none` si no existe vínculo. Esta ruta pertenece al modelo de cuentas legacy de este backend.
       responses:
-        "200":
-          description: Estado del vínculo (none si nunca se vinculó)
+        '200':
+          description: Estado del vínculo.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/IpsLinkStateResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+              schema: { $ref: '#/components/schemas/LegacyIpsLinkState' }
+              example: { status: none, ips: null, linked_at: null, status_changed_at: null }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
     post:
-      summary: Vincular cuenta con la IPS (documento + código de activación de 6 dígitos)
-      description: >
-        El adaptador de la IPS activa el contrato de esa institución. Al vincular,
-        los datos de la IPS sobreescriben los locales en GET /me.
+      tags: [Perfil]
+      operationId: linkIps
+      summary: Vincular la cuenta actual con una IPS
+      description: |
+        Intercambia documento, EPS y código de activación con la IPS elegida.
+        El token devuelto por la IPS se cifra antes de guardarse y nunca se devuelve.
+        Si hay más de una IPS activa, se debe indicar `ips_id`. Un vínculo activo
+        existente debe desvincularse antes de iniciar otro.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/IpsLinkRequest" }
+            schema: { $ref: '#/components/schemas/LegacyIpsLinkRequest' }
+            example:
+              document_type: CC
+              document_number: '1032456789'
+              eps: Confianza
+              activation_code: '123456'
+              ips_id: confianza
       responses:
-        "200":
-          description: Vinculado
+        '200':
+          description: Cuenta vinculada.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/IpsLinkStateResponse" }
-        "401":
-          description: Código o documento inválidos
+              schema: { $ref: '#/components/schemas/LegacyIpsLinkState' }
+        '401':
+          description: Documento o código rechazado por la IPS, o sesión ausente.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "409":
-          description: Ya existe un vínculo activo (desvincula primero)
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Ya hay un vínculo activo o no hay ninguna IPS activa disponible.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "422": { $ref: "#/components/responses/ValidationError" }
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/IpsUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
     delete:
-      summary: Desvincular la cuenta de la IPS (por decisión del usuario)
+      tags: [Perfil]
+      operationId: unlinkIps
+      summary: Desvincular la cuenta actual de su IPS
+      description: Desactiva el vínculo local y elimina el token cifrado. No cancela citas ni cambia la afiliación en el sistema de la IPS. Es idempotente si no hay vínculo.
       responses:
-        "200":
-          description: Desvinculado
+        '200':
+          description: Estado posterior a la desvinculación.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/IpsLinkStateResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+              schema: { $ref: '#/components/schemas/LegacyIpsLinkState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /me:
     get:
-      summary: Perfil fusionado (locales + de la IPS según vínculo)
-      description: >
-        Cada campo de `profile` trae `source`: `local` (cuenta) o `ips` (sobreescribe
-        al vincular). Si el vínculo está desactivado, los campos de la IPS dejan de
-        servirse y manda lo local.
+      tags: [Perfil]
+      operationId: getMe
+      summary: Obtener perfil, consentimiento y vínculo de la cuenta actual
+      description: |
+        Combina los campos locales disponibles con los datos devueltos en vivo por
+        la IPS cuando hay vínculo activo. Cada campo de perfil identifica su fuente.
+        En esta versión no hay endpoint para editar los campos locales.
       responses:
-        "200":
-          description: Perfil
+        '200':
+          description: Perfil de la cuenta.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/MeResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+              schema: { $ref: '#/components/schemas/MeResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
-  /appointments:
+  /internal/ips/link:
     get:
-      summary: Citas del paciente (lectura)
-      description: >
-        Se sirve desde la IPS en vivo; si la IPS falla o está lenta, desde la caché
-        de respaldo con `stale: true`. Escrituras NO existen aquí: se hacen solo
-        desde el chat vía tools (decidido: solo chat).
-      responses:
-        "200":
-          description: Citas (posiblemente desde caché)
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/AppointmentsResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "409":
-          description: Sin vínculo activo con ninguna IPS
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-
-  /hospitals/nearby:
-    get:
-      summary: Hospitales más cercanos (base propia, N3/N4 — no depende de la IPS)
+      tags: [Integración IPS interna]
+      operationId: getExternalIpsLink
+      summary: Consultar el vínculo IPS de una identidad externa
+      description: Devuelve el estado asociado a `external_subject`; requiere autenticación de servidor a servidor.
+      security: [{ wayloInternalKey: [] }]
       parameters:
-        - name: lat
-          in: query
-          schema: { type: number }
-        - name: lng
-          in: query
-          schema: { type: number }
-        - name: city
-          in: query
-          schema: { type: string }
-          description: Ciudad a buscar (perfil o pedida en el chat; prioridad lat/lng > city)
-        - name: limit
-          in: query
-          schema: { type: integer, default: 5, maximum: 20 }
+        - $ref: '#/components/parameters/ExternalSubject'
       responses:
-        "200":
-          description: >
-            Hospitales ordenados por distancia (Haversine). Prioridad de origen:
-            GPS > ciudad (perfil o parámetro `city`); sin nada,
-            `origin.source = "none"` y lista vacía.
+        '200':
+          description: Estado del vínculo externo.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/NearbyResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-
-  /calendar/connect:
+              schema: { $ref: '#/components/schemas/ExternalIpsLinkState' }
+              example: { status: none, ips: null, linked_at: null, status_changed_at: null }
+        '401': { $ref: '#/components/responses/InvalidInternalKey' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/IntegrationUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
     post:
-      summary: Iniciar conexión con Google Calendar (fase 5) — solo Waylo → Google
+      tags: [Integración IPS interna]
+      operationId: createExternalIpsLink
+      summary: Vincular una identidad externa con una IPS
+      description: |
+        Activa la afiliación usando el adaptador configurado, guarda el token IPS
+        cifrado y devuelve solo el estado. Un vínculo activo no vencido produce
+        `409 LINK_EXISTS`; un vínculo vencido puede volver a activarse.
+      security: [{ wayloInternalKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalIpsLinkRequest' }
+            example:
+              external_subject: waylo-user-123
+              ips_id: confianza
+              document_type: CC
+              document_number: '1032456789'
+              eps: Confianza
+              activation_code: '123456'
       responses:
-        "200":
-          description: URL de autorización de Google
+        '200':
+          description: Vínculo externo activo.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/CalendarConnectResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+              schema: { $ref: '#/components/schemas/ExternalIpsLinkState' }
+        '401': { $ref: '#/components/responses/UnauthorizedOrInvalidActivation' }
+        '409':
+          description: Ya hay un vínculo activo, o no existe una IPS activa seleccionable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503':
+          description: Clave interna no configurada o la IPS no respondió.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
     delete:
-      summary: Desconectar Google Calendar y borrar el token guardado (fase 5)
+      tags: [Integración IPS interna]
+      operationId: unlinkExternalIps
+      summary: Desvincular una identidad externa de la IPS
+      description: Elimina el token guardado y marca el vínculo como `unlinked`; no cambia datos ni citas en la IPS. Es idempotente si no existe vínculo.
+      security: [{ wayloInternalKey: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ExternalSubject'
       responses:
-        "204": { description: Desconectado }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+        '200':
+          description: Estado posterior a la desvinculación.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalIpsLinkState' }
+        '401': { $ref: '#/components/responses/InvalidInternalKey' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/IntegrationUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
-# ── Eventos del WebSocket (OpenAPI no los cubre) ──────────────────────────────
-x-waylo-websocket:
-  path: /ws/chat
-  description: >
-    Chat de texto y voz con Grok. Autenticación: la misma cookie `waylo_session`
-    al conectar. Un solo orquestador para texto y voz.
-  client_to_server:
-    - event: message
-      payload: { type: string, text: string }
-      description: Mensaje de texto del usuario
-    - event: audio_chunk
-      payload: binary
-      description: Fragmento de audio del micrófono (voz)
-    - event: interrupt
-      payload: { type: string }
-      description: Corta a Waylo mientras habla
-    - event: voice_start
-      payload: { type: string }
-      description: Abre el canal de voz (speech-to-speech)
-    - event: voice_stop
-      payload: { type: string }
-      description: Cierra el canal de voz
-  server_to_client:
-    - event: message_delta
-      payload: { type: string, text: string }
-      description: Streaming de la respuesta
-    - event: transcript
-      payload: { type: string, text: string, final: boolean }
-      description: Transcripción parcial y final (voz)
-    - event: audio_chunk
-      payload: binary
-      description: Audio de respuesta de Waylo
-    - event: level_detected
-      payload: { type: string, level: string, reasons: array }
-      description: Nivel N0–N4 clasificado (tras submit_triage)
-    - event: tool_status
-      payload: { type: string, tool: string, status: string, error: "string (opcional)" }
-      description: Tool en curso / listo / error (create, cancel, reschedule…)
-    - event: red_flag
-      payload: { type: string, level: string, message: string }
-      description: Red flag determinística → escala a N3/N4 sin pasar por Grok
-    - event: link_degraded
-      payload: { type: string, status: string }
-      description: Vínculo inactivo/desactivado → N1/N2 bloqueadas, N0/N3/N4 siguen
-    - event: stale_context
-      payload: { type: string, stale: boolean }
-      description: IPS caída → contexto/citas desde caché
-    - event: llm_down
-      payload: { type: string, message: string }
-      description: Grok caído → mensaje claro + canal alterno (IPS o emergencias)
+  /internal/ips/patient:
+    get:
+      tags: [Integración IPS interna]
+      operationId: getExternalIpsPatient
+      summary: Consultar el paciente vinculado en la IPS
+      description: Usa el token almacenado en el backend y devuelve el paciente normalizado. No persiste una copia del perfil clínico.
+      security: [{ wayloInternalKey: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ExternalSubject'
+      responses:
+        '200':
+          description: Paciente normalizado por el adaptador IPS.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CanonicalPatient' }
+        '401': { $ref: '#/components/responses/UnauthorizedOrInvalidActivation' }
+        '409': { $ref: '#/components/responses/NoActiveLink' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/IntegrationUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /internal/ips/appointments:
+    get:
+      tags: [Integración IPS interna]
+      operationId: listExternalIpsAppointments
+      summary: Consultar citas del paciente vinculado
+      description: Lectura en vivo a través del adaptador IPS. Este backend no crea, cancela ni reprograma citas.
+      security: [{ wayloInternalKey: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ExternalSubject'
+      responses:
+        '200':
+          description: Lista de citas normalizadas.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Appointment' }
+        '401': { $ref: '#/components/responses/UnauthorizedOrInvalidActivation' }
+        '409': { $ref: '#/components/responses/NoActiveLink' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/IntegrationUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
 components:
   securitySchemes:
@@ -300,216 +394,276 @@ components:
       type: apiKey
       in: cookie
       name: waylo_session
-
+      description: |
+        Cookie httpOnly creada por `/auth/register` o `/auth/login`. Al abrir
+        Swagger en el mismo origen del backend, el navegador la envía automáticamente;
+        el JavaScript de la página no puede leer su valor.
+    wayloInternalKey:
+      type: apiKey
+      in: header
+      name: X-Waylo-Internal-Key
+      description: |
+        Secreto servidor a servidor; el backend valida contra `WAYLO_INTERNAL_KEY`.
+        No introducir la clave de producción en Swagger ni en otro navegador.
+        Para explorar estas rutas, usar únicamente una clave de un entorno de prueba.
+  parameters:
+    ExternalSubject:
+      name: external_subject
+      in: query
+      required: true
+      description: Identificador estable de la persona en el sistema frontend. No incluir correo ni datos clínicos.
+      schema: { type: string, minLength: 1, maxLength: 200 }
+      example: waylo-user-123
   responses:
     Unauthorized:
-      description: Sin sesión (cookie ausente o vencida)
+      description: Cookie ausente, inválida o sesión vencida.
       content:
         application/json:
-          schema: { $ref: "#/components/schemas/Error" }
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: UNAUTHORIZED, message: Sin sesión } }
+    InvalidInternalKey:
+      description: Header interno ausente o incorrecto.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: UNAUTHORIZED, message: Credencial interna inválida } }
+    UnauthorizedOrInvalidActivation:
+      description: Clave interna ausente o incorrecta, o la IPS rechazó el documento, el código o el token de acceso.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            internal_key:
+              summary: Credencial interna inválida
+              value: { error: { code: UNAUTHORIZED, message: Credencial interna inválida } }
+            ips_activation:
+              summary: IPS rechazó los datos de activación
+              value: { error: { code: LINK_INVALID, message: Código o documento inválidos } }
     ValidationError:
-      description: Payload inválido (Zod)
+      description: Parámetro o cuerpo inválido según el esquema de validación del endpoint.
       content:
         application/json:
-          schema: { $ref: "#/components/schemas/Error" }
-
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: VALIDATION, message: 'activation_code: El código de activación son 6 dígitos' } }
+    NoActiveLink:
+      description: No existe un vínculo IPS activo o el token expiró.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: NO_ACTIVE_LINK, message: No hay un vínculo IPS activo o el token expiró } }
+    IpsUnavailable:
+      description: La IPS no respondió o devolvió un error de servicio.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: IPS_UNAVAILABLE, message: La IPS no respondió } }
+    IntegrationUnavailable:
+      description: La integración IPS interna no está configurada o la IPS no respondió.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InternalError:
+      description: Error inesperado del servidor.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: INTERNAL, message: Error interno } }
   schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, const: ok }
     Error:
       type: object
+      additionalProperties: false
       required: [error]
       properties:
         error:
           type: object
+          additionalProperties: false
           required: [code, message]
           properties:
             code:
               type: string
-              enum: [INVALID_CREDENTIALS, UNAUTHORIZED, NOT_FOUND, EMAIL_TAKEN, LINK_EXISTS,
-                     LINK_INVALID, NO_ACTIVE_LINK, NO_LOCATION, IPS_UNAVAILABLE,
-                     LLM_UNAVAILABLE, VALIDATION, INTERNAL]
+              enum: [INVALID_CREDENTIALS, UNAUTHORIZED, NOT_FOUND, EMAIL_TAKEN, LINK_EXISTS, LINK_INVALID, NO_ACTIVE_LINK, INTEGRATION_UNAVAILABLE, IPS_UNAVAILABLE, VALIDATION, INTERNAL]
             message: { type: string }
-
     RegisterRequest:
       type: object
+      additionalProperties: false
       required: [email, password]
       properties:
-        email: { type: string, format: email }
-        password: { type: string, minLength: 8 }
-
+        email: { type: string, format: email, maxLength: 254, description: Se elimina espacio exterior y se almacena en minúsculas. }
+        password: { type: string, minLength: 8, maxLength: 1000, format: password }
     LoginRequest:
       type: object
+      additionalProperties: false
       required: [email, password]
       properties:
-        email: { type: string, format: email }
-        password: { type: string }
-
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 1, maxLength: 1000, format: password }
     UserResponse:
       type: object
+      additionalProperties: false
       required: [id, email]
       properties:
-        id: { type: string }
+        id: { type: string, description: Identificador interno opaco de la cuenta. }
         email: { type: string, format: email }
-
     ConsentRequest:
       type: object
+      additionalProperties: false
       required: [text_version]
       properties:
-        text_version: { type: string, description: Versión del texto mostrado al usuario }
-
+        text_version: { type: string, minLength: 1, maxLength: 100, description: Versión exacta del aviso mostrado y aceptado. }
     ConsentResponse:
       type: object
+      additionalProperties: false
       required: [text_version, granted_at]
       properties:
         text_version: { type: string }
         granted_at: { type: string, format: date-time }
-
-    IpsLinkRequest:
+    LegacyIpsLinkRequest:
       type: object
+      additionalProperties: false
       required: [document_type, document_number, activation_code]
       properties:
         document_type: { type: string, minLength: 2, maxLength: 20 }
         document_number: { type: string, minLength: 3, maxLength: 40 }
-        eps:
-          type: [string, "null"]
-          maxLength: 120
-          description: Requerido por contratos que lo exigen (Confianza IPS)
-        activation_code: { type: string, pattern: '^\d{6}$' }
-        ips_id:
-          type: string
-          maxLength: 64
-          description: >
-            Slug de la IPS en el registro multi-IPS. Obligatorio si hay más de una IPS
-            activa; si hay una sola, se usa por defecto.
-
-    IpsLinkStateResponse:
+        eps: { type: [string, 'null'], minLength: 2, maxLength: 120, description: Necesario para adaptadores IPS que lo exigen. }
+        activation_code: { type: string, pattern: '^\d{6}$', description: Código de activación de seis dígitos. }
+        ips_id: { type: string, minLength: 1, maxLength: 64, description: Slug de IPS; obligatorio si hay más de una IPS activa. }
+    LegacyIpsLinkState:
       type: object
-      required: [status]
+      additionalProperties: false
+      required: [status, ips, linked_at, status_changed_at]
       properties:
-        status:
-          type: string
-          enum: [none, active, unlinked, deactivated]
-          description: >
-            none = sin fila; active = vínculo activo; unlinked = lo desvinculó el
-            usuario; deactivated = la IPS desactivó al usuario.
+        status: { type: string, enum: [none, active, unlinked, deactivated] }
         ips:
-          type: [object, "null"]
-          properties:
-            name: { type: string }
-        linked_at: { type: [string, "null"], format: date-time }
-        status_changed_at: { type: [string, "null"], format: date-time }
-
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [name]
+              properties: { name: { type: string } }
+        linked_at: { type: [string, 'null'], format: date-time }
+        status_changed_at: { type: [string, 'null'], format: date-time }
     FieldValue:
       type: object
+      additionalProperties: false
       required: [value, source]
       properties:
-        value: { type: [string, "null"] }
+        value: { type: [string, 'null'] }
         source: { type: string, enum: [local, ips] }
-
     MeResponse:
       type: object
-      required: [user, consent, profile, link]
+      additionalProperties: false
+      required: [user, consent, profile, primary_site, link]
       properties:
-        user: { $ref: "#/components/schemas/UserResponse" }
+        user: { $ref: '#/components/schemas/UserResponse' }
         consent:
           type: object
-          required: [granted]
+          additionalProperties: false
+          required: [granted, text_version]
           properties:
             granted: { type: boolean }
-            text_version: { type: [string, "null"] }
+            text_version: { type: [string, 'null'] }
         profile:
           type: object
-          description: Cada campo con su fuente; sin vínculo todo es `local` o null
+          additionalProperties: false
+          required: [name, sex, birth_date, city, eps]
           properties:
-            name: { $ref: "#/components/schemas/FieldValue" }
-            sex: { $ref: "#/components/schemas/FieldValue" }
-            birth_date: { $ref: "#/components/schemas/FieldValue" }
-            city: { $ref: "#/components/schemas/FieldValue" }
-            eps: { $ref: "#/components/schemas/FieldValue" }
+            name: { $ref: '#/components/schemas/FieldValue' }
+            sex: { $ref: '#/components/schemas/FieldValue' }
+            birth_date: { $ref: '#/components/schemas/FieldValue' }
+            city: { $ref: '#/components/schemas/FieldValue' }
+            eps: { $ref: '#/components/schemas/FieldValue' }
         primary_site:
-          type: [object, "null"]
-          description: Sede vinculada del paciente (de la IPS) — donde se agendan N1/N2
-          required: [name, address, city]
-          properties:
-            id: { type: [integer, "null"] }
-            name: { type: string }
-            address: { type: string }
-            city: { type: string }
-        link: { $ref: "#/components/schemas/IpsLinkStateResponse" }
-
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/PrimarySite'
+        link: { $ref: '#/components/schemas/LegacyIpsLinkState' }
+    PrimarySite:
+      type: object
+      additionalProperties: false
+      required: [id, name, address, city]
+      properties:
+        id: { type: [integer, 'null'] }
+        name: { type: string }
+        address: { type: string }
+        city: { type: string }
+    ExternalIpsLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [external_subject, document_type, document_number, eps, activation_code]
+      properties:
+        external_subject: { type: string, minLength: 1, maxLength: 200, description: Identificador opaco estable del usuario en el BFF. }
+        ips_id: { type: string, minLength: 1, maxLength: 64, default: confianza, description: Slug de IPS; si se omite se usa `confianza`. }
+        document_type: { type: string, minLength: 2, maxLength: 20 }
+        document_number: { type: string, minLength: 3, maxLength: 40 }
+        eps: { type: string, minLength: 2, maxLength: 120 }
+        activation_code: { type: string, pattern: '^\d{6}$' }
+    ExternalIpsLinkState:
+      type: object
+      additionalProperties: false
+      required: [status, ips, linked_at, status_changed_at]
+      properties:
+        status: { type: string, enum: [none, active, expired, unlinked, deactivated] }
+        ips:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [name, slug]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+        linked_at: { type: [string, 'null'], format: date-time }
+        status_changed_at: { type: [string, 'null'], format: date-time }
+    CanonicalPatient:
+      type: object
+      additionalProperties: false
+      required: [patientId, name, sex, birthDate, city, eps, primarySite]
+      properties:
+        patientId: { type: integer, description: Identificador del paciente dentro de la IPS. }
+        name: { type: [string, 'null'] }
+        sex: { type: [string, 'null'] }
+        birthDate: { type: [string, 'null'], format: date }
+        city: { type: [string, 'null'] }
+        eps: { type: [string, 'null'] }
+        primarySite:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/PrimarySite'
     Appointment:
       type: object
-      required: [id, starts_at, status]
+      additionalProperties: false
+      required: [id, type, startsAt, endsAt, status, reason, doctorName, site]
       properties:
-        id: { type: string, description: Id opaco en la IPS (nunca exponer ids de otros pacientes) }
-        type:
-          type: [string, "null"]
-          enum: [general, priority, null]
-        starts_at: { type: string, format: date-time }
-        ends_at: { type: [string, "null"], format: date-time }
-        status:
-          type: string
-          enum: [requested, confirmed, cancelled, completed, no_show]
-        reason: { type: [string, "null"] }
-        doctor_name: { type: [string, "null"] }
+        id: { type: string, description: Identificador opaco de cita en la IPS. }
+        type: { type: [string, 'null'], enum: [general, priority, null] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
+        status: { type: string, enum: [requested, confirmed, cancelled, completed, no_show] }
+        reason: { type: [string, 'null'] }
+        doctorName: { type: [string, 'null'] }
         site:
-          type: [object, "null"]
-          properties:
-            name: { type: string }
-            address: { type: string }
-            city: { type: string }
-
-    AppointmentsResponse:
-      type: object
-      required: [stale, appointments]
-      properties:
-        stale:
-          type: boolean
-          description: true = servido desde la caché porque la IPS no respondió
-        fetched_at: { type: [string, "null"], format: date-time }
-        appointments:
-          type: array
-          items: { $ref: "#/components/schemas/Appointment" }
-
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [name, address, city]
+              properties:
+                name: { type: string }
+                address: { type: string }
+                city: { type: string }
     DeleteAccountResponse:
       type: object
+      additionalProperties: false
       required: [deleted, appointments_left_in_ips]
       properties:
         deleted: { type: boolean, const: true }
         appointments_left_in_ips:
           type: array
-          description: Citas que permanecen en la IPS (no se cancelan)
-          items: { $ref: "#/components/schemas/Appointment" }
-
-    HospitalDistance:
-      type: object
-      required: [id, name, address, city, lat, lng, distance_km]
-      properties:
-        id: { type: integer }
-        name: { type: string }
-        address: { type: string }
-        city: { type: string }
-        phone: { type: [string, "null"] }
-        lat: { type: number }
-        lng: { type: number }
-        distance_km: { type: number }
-
-    NearbyResponse:
-      type: object
-      required: [origin, hospitals]
-      properties:
-        origin:
-          type: object
-          required: [source]
-          properties:
-            lat: { type: [number, "null"] }
-            lng: { type: [number, "null"] }
-            source: { type: string, enum: [gps, profile_city, query_city, none] }
-        hospitals:
-          type: array
-          items: { $ref: "#/components/schemas/HospitalDistance" }
-
-    CalendarConnectResponse:
-      type: object
-      required: [authorize_url]
-      properties:
-        authorize_url: { type: string, format: uri }
+          description: Citas que continúan en la IPS y no fueron canceladas.
+          items: { $ref: '#/components/schemas/Appointment' }

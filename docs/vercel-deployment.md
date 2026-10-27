@@ -34,6 +34,16 @@ Configurar en Production y Preview, sin commitearlas:
 
 Las variables opcionales están documentadas en `deploy.md`.
 
+## Compatibilidad de Swagger UI
+
+`@fastify/swagger-ui` instala `@fastify/static`. Vercel/Node.js 24 puede
+resolver una versión de `content-disposition` ESM que `@fastify/static` carga
+con `require()`, provocando `ERR_REQUIRE_ESM` al iniciar la función.
+
+El `overrides` de `package.json` fija `@fastify/static@10.1.0`, cuya cadena usa
+una versión CommonJS compatible. Mantener `package-lock.json` sincronizado y
+no eliminar este override sin validar un Preview.
+
 ## Validación local
 
 ```bash

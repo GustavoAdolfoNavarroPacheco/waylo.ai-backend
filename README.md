@@ -60,10 +60,10 @@ Guía ampliada (backend + frontend + verificación): [`TESTING_SETUP.md`](./TEST
 | `APP_SECRET` | **sí** | ≥32 caracteres; HMAC de seudónimos (consentimientos, auditoría) |
 | `IPS_TOKEN_KEY` | **sí** | 64 hex (32 bytes); AES-256-GCM de los tokens de la IPS |
 | `SESSION_TTL_DAYS` | no | Duración de la sesión web (default `30`) |
-| `CONFIANZA_BASE_URL` | no | URL de la IPS (adaptador `confianza`) |
-| `CONFIANZA_AGENT_KEY` | no | Header `X-Confianza-Agent-Key` si la IPS lo configuró |
-| `CONFIANZA_ENABLED` | no | Activa el adaptador real de Confianza; `false` mantiene el catálogo desactivado |
-| `WAYLO_INTERNAL_KEY` | no | Secreto compartido con el BFF de `waylo.ai`; protege `/internal/ips/*` |
+| `CONFIANZA_BASE_URL` | para la integración | URL pública del backend de Confianza; el adaptador compone `/api/v1` |
+| `CONFIANZA_AGENT_KEY` | para la integración | Debe igualar `AGENT_API_KEY` en Confianza |
+| `CONFIANZA_ENABLED` | para el seed | `true` registra Confianza como IPS activa |
+| `WAYLO_INTERNAL_KEY` | para el BFF | Secreto compartido con `waylo.ai`; protege `/internal/ips/*` |
 | `XAI_API_KEY` | no | API key del LLM (fase 1) |
 | `LLM_BASE_URL` | no | Endpoint compatible con OpenAI (fase 1) |
 | `EMERGENCY_PHONE` | no | Número de emergencias del país |

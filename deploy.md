@@ -44,7 +44,9 @@ Sin `--profile https` solo levantan `db` + `api` (así se prueba en local: `http
 | `POSTGRES_PASSWORD` | sí | solo alfanumeríticos (va dentro de `DATABASE_URL`) |
 | `APP_SECRET` | sí | ≥32 chars → `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `IPS_TOKEN_KEY` | sí | 64 hex (AES-256-GCM), mismo comando |
-| `CONFIANZA_BASE_URL` / `CONFIANZA_AGENT_KEY` | no | cuando haya servidor real |
+| `CONFIANZA_BASE_URL` / `CONFIANZA_AGENT_KEY` | sí para el vínculo IPS | URL pública y clave igual a `AGENT_API_KEY` en Confianza |
+| `WAYLO_INTERNAL_KEY` | sí para el BFF | Igual a `WAYLO_BACKEND_KEY` del frontend ciudadano |
+| `CONFIANZA_ENABLED` | sí para el seed IPS | `true` antes de ejecutar `npm run seed:ips` |
 | `XAI_API_KEY` / `LLM_BASE_URL` | no | Grok (Fase 1) |
 | `EMERGENCY_PHONE` / `MENTAL_HEALTH_PHONE` | no | números por país |
 | `VOICE_BUDGET_MONTHLY_USD` | no | default 10 |

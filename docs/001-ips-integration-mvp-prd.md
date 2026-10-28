@@ -4,6 +4,11 @@
 **Fecha:** 2026-10-26
 **Repositorio:** `waylo.ai-backend`
 
+> **Alcance arquitectónico:** este PRD describe el MVP transitorio BFF +
+> `external_subject`. La arquitectura objetivo fue redefinida por
+> [`ADR-003`](./003-canonical-architecture-adr.md): el backend será la autoridad
+> única y el BFF se conservará solo durante la migración.
+
 ## Problema y objetivo
 
 El backend ya contiene un adaptador Confianza, pero el frontend ciudadano no usa sus
@@ -32,7 +37,7 @@ lecturas normalizadas para el BFF de Next.js.
 
 - Autenticación del navegador.
 - Chat, voz, LLM, RAG o calendario.
-- Escritura de citas.
+- Herramientas de citas del chat; se documentan en [`005-appointment-tools-prd.md`](./005-appointment-tools-prd.md).
 - Sustituir todavía las rutas legacy `/ips/link` y `/me`.
 - Guardar historia clínica o copiar datos de salud localmente.
 
@@ -93,7 +98,8 @@ normalizado. No persiste la respuesta clínica.
 #### `GET /internal/ips/appointments?external_subject=...`
 
 Descifra el token en memoria, llama a `GET /api/v1/appointments` y devuelve citas
-normalizadas. En este MVP es una operación de solo lectura.
+normalizadas. Las escrituras no se agregan a esta ruta: se ejecutan únicamente dentro
+del ciclo de tools de `/internal/chat/completion`.
 
 #### `DELETE /internal/ips/link?external_subject=...`
 

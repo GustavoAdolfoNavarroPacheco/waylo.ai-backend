@@ -26,6 +26,19 @@ describe('API interna del adaptador IPS', () => {
     expect(response.json().error.code).toBe('UNAUTHORIZED');
   });
 
+  it('expone una configuración ausente como error de integración y no consulta la base', async () => {
+    const unconfiguredApp = await buildApp({ config: testConfig(), prisma: {} as never });
+
+    const response = await unconfiguredApp.inject({
+      method: 'GET',
+      url: '/internal/ips/link?external_subject=user-1',
+    });
+    await unconfiguredApp.close();
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe('INTEGRATION_UNAVAILABLE');
+  });
+
   it('devuelve contexto clínico normalizado y actualiza la caché cifrada', async () => {
     const cacheEntry = { upsert: vi.fn().mockResolvedValue(undefined), findUnique: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() };
     const prisma = {

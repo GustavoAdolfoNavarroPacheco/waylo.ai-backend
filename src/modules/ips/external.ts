@@ -1,12 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { CacheKind, Prisma, type PrismaClient } from '@prisma/client';
 import type { AppDeps } from '../../app';
 import { AppError, errors } from '../../errors';
 import { decryptSecret, encryptSecret } from '../../lib/crypto';
 import { createIpsClient } from './client';
-import type { ExternalIpsLinkStatus } from './types';
+import { clearIpsCache, readIpsCache, writeIpsCache } from './cache';
+import type { IpsClinicalContext } from './context';
+import type { ExternalIpsLinkStatus, IpsClient } from './types';
+
+const CLINICAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const subjectSchema = z.object({
   external_subject: z.string().trim().min(1).max(200),
@@ -68,6 +72,15 @@ export function registerExternalIpsRoutes(app: FastifyInstance, deps: AppDeps): 
       linkedAt: now,
       statusChangedAt: now,
     };
+    if (existing) {
+      await clearIpsCache({
+        prisma,
+        tokenKey: config.IPS_TOKEN_KEY,
+        ipsId: existing.ipsId,
+        externalSubject: body.external_subject,
+        patientId: existing.patientId,
+      }).catch(() => undefined);
+    }
     const link = existing
       ? await prisma.externalIpsLink.update({ where: { id: existing.id }, data, include: includeIps })
       : await prisma.externalIpsLink.create({ data, include: includeIps });
@@ -78,27 +91,59 @@ export function registerExternalIpsRoutes(app: FastifyInstance, deps: AppDeps): 
   app.get('/internal/ips/patient', async (req) => {
     requireInternalKey(req.headers['x-waylo-internal-key'], config.WAYLO_INTERNAL_KEY);
     const { external_subject } = subjectSchema.parse(req.query);
-    const link = await requireActiveLink(prisma, external_subject);
-    try {
-      const token = decryptSecret(link.accessTokenEncrypted!, config.IPS_TOKEN_KEY);
-      return await createIpsClient(link.ips, process.env).getPatient(token, link.patientId);
-    } catch (err) {
-      await markRejectedLink(prisma, link.id, err);
-      throw err;
-    }
+    return withActiveIpsClient(prisma, config.IPS_TOKEN_KEY, external_subject, (client, token, patientId) =>
+      client.getPatient(token, patientId),
+    );
   });
 
   app.get('/internal/ips/appointments', async (req) => {
     requireInternalKey(req.headers['x-waylo-internal-key'], config.WAYLO_INTERNAL_KEY);
     const { external_subject } = subjectSchema.parse(req.query);
-    const link = await requireActiveLink(prisma, external_subject);
-    try {
-      const token = decryptSecret(link.accessTokenEncrypted!, config.IPS_TOKEN_KEY);
-      return await createIpsClient(link.ips, process.env).listAppointments(token);
-    } catch (err) {
-      await markRejectedLink(prisma, link.id, err);
-      throw err;
-    }
+    return withActiveIpsClient(prisma, config.IPS_TOKEN_KEY, external_subject, (client, token) =>
+      client.listAppointments(token),
+    );
+  });
+
+  app.get('/internal/ips/context', async (req) => {
+    requireInternalKey(req.headers['x-waylo-internal-key'], config.WAYLO_INTERNAL_KEY);
+    const { external_subject } = subjectSchema.parse(req.query);
+    return withActiveIpsClient(prisma, config.IPS_TOKEN_KEY, external_subject, async (client, token, patientId, ipsId) => {
+      try {
+        const [patient, clinicalHistory] = await Promise.all([
+          client.getPatient(token, patientId),
+          client.getClinicalHistory(token, patientId),
+        ]);
+        const context: IpsClinicalContext = {
+          patient,
+          clinicalHistory,
+          source: 'live',
+          fetchedAt: new Date().toISOString(),
+        };
+        await writeIpsCache({
+          prisma,
+          tokenKey: config.IPS_TOKEN_KEY,
+          ipsId,
+          externalSubject: external_subject,
+          patientId,
+          kind: CacheKind.CLINICAL,
+          value: context,
+          ttlMs: CLINICAL_CACHE_TTL_MS,
+        });
+        return context;
+      } catch (error) {
+        if (error instanceof AppError && (error.statusCode === 401 || error.statusCode === 403)) throw error;
+        const cached = await readIpsCache<IpsClinicalContext>({
+          prisma,
+          tokenKey: config.IPS_TOKEN_KEY,
+          ipsId,
+          externalSubject: external_subject,
+          patientId,
+          kind: CacheKind.CLINICAL,
+        });
+        if (!cached) throw error;
+        return { ...cached.value, source: 'cache' as const, fetchedAt: cached.fetchedAt.toISOString() };
+      }
+    });
   });
 
   app.delete('/internal/ips/link', async (req, reply) => {
@@ -111,8 +156,36 @@ export function registerExternalIpsRoutes(app: FastifyInstance, deps: AppDeps): 
       data: { status: 'UNLINKED', statusChangedAt: new Date(), accessTokenEncrypted: null, tokenExpiresAt: null },
       include: includeIps,
     });
+    await clearIpsCache({
+      prisma,
+      tokenKey: config.IPS_TOKEN_KEY,
+      ipsId: link.ipsId,
+      externalSubject: external_subject,
+      patientId: link.patientId,
+    }).catch(() => undefined);
     return reply.status(200).send(externalLinkState(updated));
   });
+}
+
+/**
+ * Resolves the patient-scoped IPS client without exposing its token to callers.
+ * Chat tools and the legacy read route share this path so auth failures always
+ * deactivate the same local link.
+ */
+export async function withActiveIpsClient<T>(
+  prisma: PrismaClient,
+  tokenKey: string,
+  externalSubject: string,
+  operation: (client: IpsClient, accessToken: string, patientId: number, ipsId: string) => Promise<T>,
+): Promise<T> {
+  const link = await requireActiveLink(prisma, externalSubject);
+  try {
+    const token = decryptSecret(link.accessTokenEncrypted!, tokenKey);
+    return await operation(createIpsClient(link.ips, process.env), token, link.patientId, link.ipsId);
+  } catch (err) {
+    await markRejectedLink(prisma, link, err, tokenKey, externalSubject);
+    throw err;
+  }
 }
 
 function requireInternalKey(provided: string | string[] | undefined, expected: string | undefined): void {
@@ -140,9 +213,24 @@ async function requireActiveLink(prisma: PrismaClient, externalSubject: string) 
   return link;
 }
 
-async function markRejectedLink(prisma: PrismaClient, id: string, err: unknown): Promise<void> {
+async function markRejectedLink(
+  prisma: PrismaClient,
+  link: ExternalLinkWithIps,
+  err: unknown,
+  tokenKey: string,
+  externalSubject: string,
+): Promise<void> {
   if (err instanceof AppError && (err.statusCode === 401 || err.statusCode === 403)) {
-    await prisma.externalIpsLink.update({ where: { id }, data: { status: 'DEACTIVATED', statusChangedAt: new Date() } }).catch(() => undefined);
+    await prisma.externalIpsLink
+      .update({ where: { id: link.id }, data: { status: 'DEACTIVATED', statusChangedAt: new Date() } })
+      .catch(() => undefined);
+    await clearIpsCache({
+      prisma,
+      tokenKey,
+      ipsId: link.ipsId,
+      externalSubject,
+      patientId: link.patientId,
+    }).catch(() => undefined);
   }
 }
 

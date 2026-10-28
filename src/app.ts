@@ -18,6 +18,7 @@ import { registerConsentRoutes } from './modules/consent/routes';
 import { registerIpsRoutes } from './modules/ips/routes';
 import { registerExternalIpsRoutes } from './modules/ips/external';
 import { registerMeRoutes } from './modules/me/routes';
+import { registerChatRoutes } from './modules/chat/routes';
 
 export interface AppDeps {
   config: Config;
@@ -79,6 +80,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerIpsRoutes(app, deps);
   registerExternalIpsRoutes(app, deps);
   registerMeRoutes(app, deps);
+  registerChatRoutes(app, deps);
 
   return app;
 }

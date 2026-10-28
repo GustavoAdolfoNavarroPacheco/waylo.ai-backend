@@ -36,6 +36,8 @@ export const errors = {
   noActiveLink: (message = 'Sin vínculo activo con ninguna IPS') => new AppError(409, 'NO_ACTIVE_LINK', message),
   integrationUnavailable: (message = 'La integración interna no está configurada') =>
     new AppError(503, 'INTEGRATION_UNAVAILABLE', message),
+  llmUnavailable: (message = 'El proveedor de IA no está disponible') =>
+    new AppError(503, 'LLM_UNAVAILABLE', message),
   ipsUnavailable: (message = 'La IPS no respondió') => new AppError(503, 'IPS_UNAVAILABLE', message),
   validation: (message: string) => new AppError(422, 'VALIDATION', message),
   internal: (message = 'Error interno') => new AppError(500, 'INTERNAL', message),

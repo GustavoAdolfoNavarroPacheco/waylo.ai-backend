@@ -19,6 +19,17 @@ Qué **toda institución** debe poder satisfacer para conectarse a Waylo. Record
 | 9 | `get_confirmation_document` | ○ opcional | Comprobante de la cita |
 | 10 | `list_sites` y catálogos | ○ opcional | Sedes/médicos/servicios (si no: config por IPS + sede embebida en #2) |
 
+## Implementación actual en Waylo
+
+El contrato canónico ya está expresado por `src/modules/ips/types.ts` y `IpsClient`.
+El adaptador Confianza implementa activación, paciente, citas, escrituras, catálogos,
+disponibilidad exacta, primeros cupos compuestos, historia clínica y comprobante.
+
+La composición de primeros cupos usa temporalmente el endpoint existente por médico y
+fecha porque Confianza aún no expone `/availability/earliest`. Es una degradación del
+adaptador, no un cambio al contrato canónico. Si el cupo no trae `site_id`, Waylo lo
+devuelve como `null` y no lo usa para agendar una sede que no puede verificar.
+
 **Lo que NO es mínimo:** catálogos de médicos, `Idempotency-Key`, coordenadas de sedes (N3/N4 usan la base propia de hospitales), panel de administración, webhooks.
 
 ---

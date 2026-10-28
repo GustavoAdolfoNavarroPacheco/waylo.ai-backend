@@ -17,8 +17,8 @@ IA que según los síntomas clasifica el caso en un nivel **N0–N4** y ejecuta 
 - [ ] **Proveedor IA parametrizado:** `baseUrl` y `apiKey` en variables de entorno.
 - [ ] **RAG de contexto de la IPS:** documentos markdown en el repo, **una carpeta por institución**, indexados al arrancar. No es RAG clínico.
 - [x] **`IpsClient` con modelo canónico:** Waylo define su modelo interno (paciente, cita, cupo, sede...). Cada IPS se conecta con un **adaptador** que traduce de ese modelo al contrato real de la institución. El mock implementa el modelo canónico. *(hecho: mock + Confianza)*
-- [ ] **Sincronización en vivo con memoria de respaldo:** si la IPS falla o tarda, Waylo responde desde su caché persistente de solo lectura **claveada por IPS** (en salud no se puede quedar en silencio); **crear** citas exige la IPS viva → mensaje claro si no está.
-- [ ] **Contexto del usuario inyectado** en la conversación: nombre, sexo, fecha de nacimiento, EPS, sede vinculada e historia clínica (**solo lectura**, se lee de la IPS; la caché de respaldo es temporal, no un espejo editable).
+- [x] **Sincronización en vivo con memoria de respaldo:** si la IPS falla o tarda, Waylo responde desde su caché persistente de solo lectura **claveada por IPS**, cifrada y con TTL máximo de siete días; **crear** citas exige la IPS viva → mensaje claro si no está.
+- [x] **Contexto del usuario inyectado** en la conversación: perfil e historia clínica (**solo lectura**, se lee de la IPS; la caché de respaldo es temporal, no un espejo editable). La memoria propia de Waylo vive en el frontend como hechos estructurados confirmados.
 - [ ] **Tools de citas** (function calling): consultar, solicitar, cancelar y reprogramar citas.
 - [ ] **Hospital más cercano:** base propia de hospitales de Colombia con coordenadas (fuente propuesta: datos abiertos del Estado) → N3/N4 funcionan **sin depender de la IPS**.
 - [ ] **Google Calendar:** un solo sentido **Waylo → Google**, con consentimiento explícito y campos mínimos (título, fecha, sede).
@@ -141,7 +141,7 @@ Dato de salud sensible (Ley 1581 de 2012 en Colombia; que lo confirme un abogado
 
 - Consentimiento explícito antes de la primera conversación, avisando: es IA, no diagnostica, y que se envía contexto a un proveedor externo (xAI).
 - **Se inyecta a Grok:** nombre, sexo, edad (no fecha de nacimiento cruda), EPS, sede vinculada e historia clínica relevante. **No se inyecta:** documento, teléfono, email.
-- Caché de respaldo: solo lectura, con TTL y cifrado en disco — es dato de salud en la BD de Waylo.
+- Caché de respaldo: solo lectura, cifrada en la aplicación, con TTL máximo de siete días — es dato de salud en la BD de Waylo y se borra al desvincular o detectar una autorización inválida.
 - Baja de cuenta = borrado total de los datos locales (derecho de supresión).
 - Logs sin sensibles. Por interacción: id de sesión, nivel, razones, red flags, tools y versiones de modelo, prompt y reglas.
 - Tokens solo en el servidor. HTTPS, rate limit por usuario, validación con Zod.

@@ -8,13 +8,13 @@ Comparación de `openapi.json` (Confianza IPS API, v0.1.0) contra `IPS_CONTRATO_
 |---|--------------------|----------|------|
 | 1 | `exchange_activation` | ✅ | `POST /integrations/agent/token` + emisión de códigos |
 | 2 | `get_patient` | ⚠️ | Falta `sex` y la sede vinculada → **obligatorios 1 y 2** |
-| 3 | `earliest_availability` | ❌ | Hoy exige médico + fecha exacta y no trae sede → **obligatorio 3** |
+| 3 | `earliest_availability` | ⚠️ | Waylo compone temporalmente consultas por médico y día; sigue faltando el endpoint institucional y `site_id` por cupo |
 | 4 | `create_appointment` | ⚠️ | Todo ok salvo `type` → **recomendado 4** |
 | 5 | `list_appointments` | ✅ | `type` derivable; doctor/sede se enriquecen con catálogos |
 | 6 | `cancel_appointment` | ✅ | `POST .../status` con `status: cancelled` |
 | 7 | `reschedule_appointment` | ✅ | `POST .../reschedule` con `starts_at` |
-| 8 | `get_clinical_history` | ⚠️ | El endpoint **existe** (`/clinical/patients/{id}`); verificar acceso con token de agente |
-| 9 | `get_confirmation_document` | ✅ | `POST /documents/appointments/{id}/confirmation` |
+| 8 | `get_clinical_history` | ⚠️ | Waylo ya implementa el adaptador para `/clinical/patients/{id}`; falta verificar acceso conectado con token de agente |
+| 9 | `get_confirmation_document` | ✅ | Waylo ya implementa `POST /documents/appointments/{id}/confirmation` |
 | 10 | catálogos | ✅ | `/services`, `/sites`, `/doctors` (sin coordenadas: no hacen falta) |
 
 ## Obligatorio

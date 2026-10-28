@@ -48,7 +48,7 @@ El schema y las migrations viven en Prisma (`prisma/schema.prisma`, `prisma/migr
 
 - **Extensión:** `pgvector` habilitada en la BD.
 - **Índices:** `ips_links(user_id)` único; `cache_entries(ips_id, kind, key)` y `cache_entries(expires_at)`; HNSW sobre `rag_chunks(embedding)`.
-- **Borrado total (baja):** `users` + `user_profiles` + `ips_links` + `sessions` + `cache_entries` del usuario + `calendar_links`. `audit_log` y `consents` quedan **seudonimizados** como prueba de cumplimiento (supuesto, validar con el abogado).
+- **Borrado total (baja):** `users` + `user_profiles` + `ips_links` + `sessions` + `calendar_links`; el BFF intenta desvincular el `external_ips_link`, lo que borra su caché clínica. Si el backend está temporalmente caído, la caché cifrada expira como máximo en siete días. `audit_log` y `consents` quedan **seudonimizados** como prueba de cumplimiento (supuesto, validar con el abogado).
 - Lo que la IPS provee y Waylo no guarda maestro: historia clínica y sede vinculada → viven en la IPS y en la caché temporal, nunca como espejo editable.
 
 ## 3. Backend (`waylo-backend`)

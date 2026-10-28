@@ -43,10 +43,87 @@ export interface CanonicalAppointment {
   site: { name: string; address: string; city: string } | null;
 }
 
+export type AppointmentType = 'general' | 'priority';
+
+export interface CanonicalService {
+  id: number;
+  name: string;
+  description: string;
+  durationMinutes: number;
+}
+
+export interface CanonicalDoctor {
+  id: number;
+  name: string;
+}
+
+export interface CanonicalAvailabilitySlot {
+  startsAt: string;
+  endsAt: string;
+  doctorId: number;
+  serviceId: number;
+  siteId: number | null;
+  doctorName: string | null;
+}
+
+export interface EarliestAvailabilityInput {
+  serviceId: number;
+  type: AppointmentType;
+  from?: string;
+  limit?: number;
+  siteId?: number | null;
+}
+
+export interface CanonicalClinicalNote {
+  id: string;
+  encounterId: string;
+  version: number;
+  noteType: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface CanonicalConfirmationDocument {
+  id: string;
+  appointmentId: string | null;
+  documentType: string;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface CreateAppointmentInput {
+  doctorId: number;
+  serviceId: number;
+  siteId: number;
+  startsAt: string;
+  reason: string;
+  type: AppointmentType;
+}
+
+export interface RescheduleAppointmentInput {
+  appointmentId: string;
+  startsAt: string;
+  reason: string;
+}
+
 export interface IpsClient {
   exchangeActivation(input: ActivationInput): Promise<ActivationResult>;
   getPatient(accessToken: string, patientId: number): Promise<CanonicalPatient>;
   listAppointments(accessToken: string): Promise<CanonicalAppointment[]>;
+  listSites(accessToken: string): Promise<CanonicalSite[]>;
+  listServices(accessToken: string): Promise<CanonicalService[]>;
+  listDoctors(accessToken: string): Promise<CanonicalDoctor[]>;
+  listAvailability(
+    accessToken: string,
+    input: { doctorId: number; serviceId: number; date: string },
+  ): Promise<CanonicalAvailabilitySlot[]>;
+  earliestAvailability(accessToken: string, input: EarliestAvailabilityInput): Promise<CanonicalAvailabilitySlot[]>;
+  createAppointment(accessToken: string, input: CreateAppointmentInput): Promise<CanonicalAppointment>;
+  cancelAppointment(accessToken: string, appointmentId: string, reason: string): Promise<CanonicalAppointment>;
+  rescheduleAppointment(accessToken: string, input: RescheduleAppointmentInput): Promise<CanonicalAppointment>;
+  getClinicalHistory(accessToken: string, patientId: number): Promise<CanonicalClinicalNote[]>;
+  getConfirmationDocument(accessToken: string, appointmentId: string): Promise<CanonicalConfirmationDocument>;
 }
 
 // contract_mapping (JSONB en ips): mitad declarativa del adaptador híbrido.

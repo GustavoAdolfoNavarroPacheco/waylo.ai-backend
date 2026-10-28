@@ -1,6 +1,6 @@
 # Waylo Backend
 
-API de Waylo para cuentas, sesiones, consentimiento, perfiles y acceso server-to-server a la IPS. El adaptador normaliza la lectura del paciente y sus citas; las operaciones de escritura de citas no están implementadas en este backend.
+API de Waylo para cuentas, sesiones, consentimiento, perfiles y acceso server-to-server a la IPS. El adaptador normaliza paciente, catálogo, disponibilidad y citas; las escrituras de citas solo se ejecutan como tools confirmadas desde el chat privado.
 
 > **Estado: Fase 0.** Cuentas, consentimiento, vínculo con la IPS y perfil fusionado están operativos. Chat, voz, triage, hospitales y calendario no forman parte de las rutas REST implementadas actualmente.
 
@@ -95,9 +95,12 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 | `GET` | `/me` | ✅ | Perfil fusionado local ↔ IPS (`source` por campo) |
 | `GET/POST/DELETE` | `/internal/ips/link` | ✅ | Estado, alta y baja de vínculo server-to-server |
 | `GET` | `/internal/ips/patient` | ✅ | Paciente normalizado para la identidad externa |
-| `GET` | `/internal/ips/appointments` | ✅ | Citas normalizadas, solo lectura |
+| `GET` | `/internal/ips/appointments` | ✅ | Citas normalizadas para lectura |
+| `POST` | `/internal/chat/completion` | ✅ | Comunicación privada con el proveedor LLM |
 
 El contrato canónico es [`docs/waylo-api.openapi.yaml`](./docs/waylo-api.openapi.yaml); describe las rutas que registra Fastify. `/docs` y `/docs/json` lo sirven tal cual. El servidor OpenAPI es relativo, por lo que “Try it out” usa el mismo origen desde el que se abrió Swagger, tanto en local como en Vercel. Detalles de seguridad, parámetros, esquemas, ejemplos y errores: [`docs/002-swagger-openapi-prd.md`](./docs/002-swagger-openapi-prd.md).
+
+El contrato entre Waylo y una IPS está en [`IPS_CONTRATO_MINIMO.md`](./IPS_CONTRATO_MINIMO.md). Su implementación y las brechas actuales de Confianza están documentadas en [`docs/006-ips-contract-completion-prd.md`](./docs/006-ips-contract-completion-prd.md).
 
 ### Adaptador ciudadano para Waylo
 
@@ -106,6 +109,11 @@ El frontend ciudadano no llama directamente a este servicio. Su Route Handler se
 - `GET/POST/DELETE /internal/ips/link`: consultar, crear o eliminar el vínculo por `external_subject`.
 - `GET /internal/ips/patient`: obtener el perfil mínimo disponible en la IPS.
 - `GET /internal/ips/appointments`: obtener las citas actuales.
+- `POST /internal/chat/completion`: ejecutar function calling de citas. Crear, cancelar y reprogramar exigen confirmación explícita y no se exponen como rutas REST independientes.
+
+El chat usa `POST /internal/chat/completion` con la misma clave interna. La ruta
+reenvía la solicitud a Reto, ejecuta las tools de citas cuando recibe un sujeto de
+sesión y no persiste mensajes. Las reglas de triage continúan en `waylo.ai`.
 
 El backend cifra el token devuelto por Confianza, no persiste el código de activación ni la cédula, y marca el vínculo como inválido cuando la IPS rechaza el token. El detalle del contrato y la secuencia completa están en [`docs/001-ips-integration-mvp-prd.md`](./docs/001-ips-integration-mvp-prd.md).
 
@@ -152,7 +160,8 @@ test/                 # tests de integración
 - Cookie `waylo_session` `httpOnly`, `SameSite=Lax` y `Secure` en producción.
 - Tokens de la IPS cifrados con AES-256-GCM; seudónimos de consentimiento con HMAC.
 - La baja de cuenta borra todo lo local; el consentimiento se conserva seudonimizado como prueba.
-- Waylo no guarda historia clínica ni copia local de los datos de la IPS.
+- Waylo no es el sistema maestro ni editable de la historia clínica. Conserva solo una caché
+  cifrada, de solo lectura y con TTL máximo de siete días, para degradar consultas IPS sin escritura.
 - Sin recuperación de contraseña ni verificación de email en el MVP (riesgo aceptado).
 
 ## Despliegue
@@ -162,6 +171,10 @@ Pasos, variables de producción, backups y rollback en [`deploy.md`](./deploy.md
 ---
 
 ## Ecosistema
+
+La memoria clínica híbrida está documentada en [`docs/007-clinical-memory.md`](./docs/007-clinical-memory.md):
+este repositorio conserva únicamente el contexto IPS cifrado y temporal; la memoria propia
+confirmada por el paciente pertenece a `waylo.ai`.
 
 | Repo | Descripción |
 |---|---|

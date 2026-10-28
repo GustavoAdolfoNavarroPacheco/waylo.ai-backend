@@ -12,8 +12,9 @@ info:
     Las rutas `/internal/*` son exclusivamente servidor a servidor y requieren
     `X-Waylo-Internal-Key`; nunca deben llamarse desde un navegador.
 
-    Esta especificación solo incluye rutas REST registradas actualmente. Chat,
-    voz, triage, hospitales y calendario no están implementados en este servidor.
+    Esta especificación incluye las rutas REST registradas actualmente. El chat
+    interno es exclusivamente server-to-server y puede ejecutar las tools de citas;
+    voz, triage, hospitales y calendario no están implementados como APIs públicas.
 servers:
   - url: /
     description: Mismo origen de esta instancia de Waylo Backend
@@ -370,7 +371,7 @@ paths:
       tags: [Integración IPS interna]
       operationId: listExternalIpsAppointments
       summary: Consultar citas del paciente vinculado
-      description: Lectura en vivo a través del adaptador IPS. Este backend no crea, cancela ni reprograma citas.
+      description: Lectura en vivo a través del adaptador IPS. Las escrituras de citas se ejecutan únicamente como tools del chat privado.
       security: [{ wayloInternalKey: [] }]
       parameters:
         - $ref: '#/components/parameters/ExternalSubject'
@@ -387,6 +388,63 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/IntegrationUnavailable' }
         '500': { $ref: '#/components/responses/InternalError' }
+
+  /internal/ips/context:
+    get:
+      tags: [Integración IPS interna]
+      operationId: getExternalIpsClinicalContext
+      summary: Obtener contexto clínico normalizado
+      description: |
+        Devuelve el paciente y la historia clínica de solo lectura. Primero consulta
+        la IPS; si no responde, usa una caché cifrada vigente de hasta siete días.
+        La caché se borra al desvincular o desactivar el vínculo. Nunca devuelve el
+        token de la IPS ni acepta datos clínicos escritos por el cliente.
+      security: [{ wayloInternalKey: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ExternalSubject'
+      responses:
+        '200':
+          description: Contexto clínico normalizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IpsClinicalContext' }
+        '401': { $ref: '#/components/responses/UnauthorizedOrInvalidActivation' }
+        '409': { $ref: '#/components/responses/NoActiveLink' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/IntegrationUnavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /internal/chat/completion:
+    post:
+      tags: [Comunicación LLM interna]
+      operationId: completeInternalChat
+      summary: Reenviar una solicitud de chat al proveedor LLM
+      description: |
+        Ruta privada usada por `waylo.ai`. Valida la clave server-to-server,
+        reenvía el mensaje a Reto y ejecuta function calling de citas cuando hay
+        un `external_subject` vinculado. Las tools disponibles son catálogo,
+        disponibilidad, consulta, creación, cancelación y reprogramación. Las
+        escrituras requieren confirmación explícita y token de cinco minutos.
+        Nunca debe llamarse desde el navegador.
+      security: [{ wayloInternalKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InternalChatCompletionRequest' }
+      responses:
+        '200':
+          description: Texto devuelto por el proveedor LLM.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InternalChatCompletionResponse' }
+        '401': { $ref: '#/components/responses/InvalidInternalKey' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503':
+          description: Integración interna o proveedor LLM no disponible.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
 components:
   securitySchemes:
@@ -487,8 +545,47 @@ components:
           properties:
             code:
               type: string
-              enum: [INVALID_CREDENTIALS, UNAUTHORIZED, NOT_FOUND, EMAIL_TAKEN, LINK_EXISTS, LINK_INVALID, NO_ACTIVE_LINK, INTEGRATION_UNAVAILABLE, IPS_UNAVAILABLE, VALIDATION, INTERNAL]
+              enum: [INVALID_CREDENTIALS, UNAUTHORIZED, NOT_FOUND, EMAIL_TAKEN, LINK_EXISTS, LINK_INVALID, NO_ACTIVE_LINK, INTEGRATION_UNAVAILABLE, LLM_UNAVAILABLE, IPS_UNAVAILABLE, VALIDATION, INTERNAL]
             message: { type: string }
+    InternalChatCompletionRequest:
+      type: object
+      additionalProperties: false
+      required: [model, temperature, system, messages]
+      properties:
+        model: { type: string, minLength: 1, maxLength: 120 }
+        temperature: { type: number, minimum: 0, maximum: 2 }
+        system: { type: string, maxLength: 120000 }
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              content: { oneOf: [{ type: string, maxLength: 80000 }, { type: array }] }
+        external_subject: { type: [string, 'null'], minLength: 1, maxLength: 200, description: Sujeto opaco de la sesión del frontend; habilita tools IPS server-side. }
+        pending_appointment_token: { type: [string, 'null'], maxLength: 4096, description: Token HMAC de confirmación emitido por una respuesta previa. }
+    InternalChatCompletionResponse:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text: { type: string }
+        pending_appointment:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/AppointmentToolConfirmation'
+    AppointmentToolConfirmation:
+      type: object
+      additionalProperties: false
+      required: [token, action, summary]
+      properties:
+        token: { type: string, description: Token opaco y efímero; no guardar en la conversación. }
+        action: { type: string, enum: [create_appointment, cancel_appointment, reschedule_appointment] }
+        summary: { type: string }
     RegisterRequest:
       type: object
       additionalProperties: false
@@ -635,6 +732,28 @@ components:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/PrimarySite'
+    IpsClinicalContext:
+      type: object
+      additionalProperties: false
+      required: [patient, clinicalHistory, source, fetchedAt]
+      properties:
+        patient: { $ref: '#/components/schemas/CanonicalPatient' }
+        clinicalHistory:
+          type: array
+          items: { $ref: '#/components/schemas/ClinicalNote' }
+        source: { type: string, enum: [live, cache] }
+        fetchedAt: { type: string, format: date-time }
+    ClinicalNote:
+      type: object
+      additionalProperties: false
+      required: [id, encounterId, version, noteType, content, createdAt]
+      properties:
+        id: { type: string }
+        encounterId: { type: string }
+        version: { type: integer, minimum: 1 }
+        noteType: { type: string }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
     Appointment:
       type: object
       additionalProperties: false

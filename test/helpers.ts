@@ -8,8 +8,24 @@ import { createPrisma } from '../src/lib/prisma';
 // (p. ej. postgresql://waylo:CHANGE_ME@127.0.0.1:5434/waylo_test).
 export function requireTestDatabase(): string {
   const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('Falta DATABASE_URL: debe apuntar a la BD de pruebas (waylo_test)');
+  if (!url || !canUseTestDatabase()) {
+    throw new Error(
+      'Falta una DATABASE_URL local para pruebas: usa PostgreSQL de test en localhost, 127.0.0.1 o ::1',
+    );
+  }
   return url;
+}
+
+/** Integration tests must never use a shared or remote database by accident. */
+export function canUseTestDatabase(): boolean {
+  const value = process.env.DATABASE_URL;
+  if (!value) return false;
+  try {
+    const host = new URL(value).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
+  }
 }
 
 export function testConfig(overrides: Partial<Config> = {}): Config {

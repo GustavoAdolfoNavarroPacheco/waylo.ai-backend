@@ -13,7 +13,7 @@ describe('adaptador Confianza IPS', () => {
       async (url, init) => {
         calls.push({ url, init });
         return new Response(
-          JSON.stringify({ access_token: 'ips-token', expires_in: 900, identity: { patient_id: 42 } }),
+          JSON.stringify({ access_token: 'ips-token', expires_in: 2_592_000, identity: { patient_id: 42 } }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
       },
@@ -26,7 +26,7 @@ describe('adaptador Confianza IPS', () => {
         eps: 'Confianza',
         activationCode: '123456',
       }),
-    ).resolves.toMatchObject({ accessToken: 'ips-token', patientId: 42 });
+    ).resolves.toMatchObject({ accessToken: 'ips-token', expiresInSeconds: 2_592_000, patientId: 42 });
 
     expect(calls[0]?.url).toBe('https://confianza.example/api/v1/integrations/agent/token');
     expect(calls[0]?.init?.method).toBe('POST');

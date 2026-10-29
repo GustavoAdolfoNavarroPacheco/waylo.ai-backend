@@ -10,7 +10,7 @@ afterEach(() => {
 
 describe('vínculo externo Waylo → Confianza', () => {
   it('intercambia el código y devuelve solo el estado, no el token de la IPS', async () => {
-    const created: { accessTokenEncrypted?: string; externalSubject?: string } = {};
+    const created: { accessTokenEncrypted?: string; externalSubject?: string; tokenExpiresAt?: Date } = {};
     const prisma = {
       ips: {
         findUnique: vi.fn().mockResolvedValue({
@@ -35,7 +35,7 @@ describe('vínculo externo Waylo → Confianza', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ access_token: 'secret-ips-token', expires_in: 900, identity: { patient_id: 42 } }), {
+        new Response(JSON.stringify({ access_token: 'secret-ips-token', expires_in: 2_592_000, identity: { patient_id: 42 } }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -67,5 +67,7 @@ describe('vínculo externo Waylo → Confianza', () => {
     expect(created.externalSubject).toBe('waylo-session-1');
     expect(created.accessTokenEncrypted).toMatch(/^v1\./);
     expect(created.accessTokenEncrypted).not.toContain('secret-ips-token');
+    expect(created.tokenExpiresAt).toBeInstanceOf(Date);
+    expect(created.tokenExpiresAt!.getTime() - Date.now()).toBeGreaterThan(2_592_000 - 5_000);
   });
 });

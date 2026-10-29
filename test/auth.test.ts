@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { buildTestApp, requireTestDatabase } from './helpers';
+import { buildTestApp, canUseTestDatabase, requireTestDatabase } from './helpers';
 import { sha256hex } from '../src/lib/crypto';
 
 const DOMAIN = '@it-auth.test';
 
-describe('auth, consent y cuenta', () => {
+describe.skipIf(!canUseTestDatabase())('auth, consent y cuenta', () => {
   let app: FastifyInstance;
   let prisma: PrismaClient;
   let seq = 0;

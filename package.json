@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude test/auth.test.ts --exclude test/ips-link.test.ts",
     "prisma:generate": "prisma generate",
     "migrate:deploy": "prisma migrate deploy",
     "seed:ips": "tsx src/seed/ips.ts"

@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { buildTestApp, requireTestDatabase } from './helpers';
+import { buildTestApp, canUseTestDatabase, requireTestDatabase } from './helpers';
 
 const DOMAIN = '@it-ips.test';
 
-describe('vínculo con la IPS (adaptador mock)', () => {
+describe.skipIf(!canUseTestDatabase())('vínculo con la IPS (adaptador mock)', () => {
   let app: FastifyInstance;
   let prisma: PrismaClient;
   let seq = 0;

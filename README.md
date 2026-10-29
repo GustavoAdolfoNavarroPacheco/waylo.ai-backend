@@ -2,7 +2,7 @@
 
 API de Waylo para cuentas, sesiones, consentimiento, perfiles y acceso server-to-server a la IPS. El adaptador normaliza paciente, catálogo, disponibilidad y citas; las escrituras de citas solo se ejecutan como tools confirmadas desde el chat privado.
 
-> **Estado: Fase 0.** Cuentas, consentimiento, vínculo con la IPS y perfil fusionado están operativos. Chat, voz, triage, hospitales y calendario no forman parte de las rutas REST implementadas actualmente.
+> **Estado:** cuentas, consentimiento, vínculo con la IPS, perfil fusionado y relay privado del chat están operativos. La validación conectada contra una IPS real y el despliegue con variables alineadas siguen siendo requisitos operativos.
 
 ## Stack
 
@@ -109,11 +109,12 @@ El frontend ciudadano no llama directamente a este servicio. Su Route Handler se
 - `GET/POST/DELETE /internal/ips/link`: consultar, crear o eliminar el vínculo por `external_subject`.
 - `GET /internal/ips/patient`: obtener el perfil mínimo disponible en la IPS.
 - `GET /internal/ips/appointments`: obtener las citas actuales.
-- `POST /internal/chat/completion`: ejecutar function calling de citas. Crear, cancelar y reprogramar exigen confirmación explícita y no se exponen como rutas REST independientes.
+- `POST /internal/chat/completion`: ejecutar function calling de perfil, catálogo, disponibilidad, citas, historia institucional y constancias. Crear, cancelar y reprogramar exigen confirmación explícita y no se exponen como rutas REST independientes.
 
 El chat usa `POST /internal/chat/completion` con la misma clave interna. La ruta
-reenvía la solicitud a Reto, ejecuta las tools de citas cuando recibe un sujeto de
-sesión y no persiste mensajes. Las reglas de triage continúan en `waylo.ai`.
+reenvía la solicitud a Reto, ejecuta las tools patient-scoped de la IPS cuando recibe
+un sujeto de sesión activo y no persiste mensajes. Las reglas de triage y la memoria
+clínica confirmada por el paciente continúan en `waylo.ai`.
 
 El backend cifra el token devuelto por Confianza, no persiste el código de activación ni la cédula, y marca el vínculo como inválido cuando la IPS rechaza el token. El detalle del contrato y la secuencia completa están en [`docs/001-ips-integration-mvp-prd.md`](./docs/001-ips-integration-mvp-prd.md).
 

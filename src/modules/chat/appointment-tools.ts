@@ -6,18 +6,24 @@ import { withActiveIpsClient } from '../ips/external';
 
 const CONFIRMATION_TTL_MS = 5 * 60 * 1000;
 
-export type AppointmentToolName =
+export type IpsToolName =
+  | 'get_patient_profile'
   | 'list_appointment_catalog'
   | 'find_availability'
   | 'find_earliest_availability'
   | 'list_my_appointments'
   | 'create_appointment'
   | 'cancel_appointment'
-  | 'reschedule_appointment';
+  | 'reschedule_appointment'
+  | 'get_clinical_history'
+  | 'get_appointment_confirmation_document';
+
+/** Backwards-compatible name for callers that only know about appointment tools. */
+export type AppointmentToolName = IpsToolName;
 
 export interface PendingAppointmentConfirmation {
   token: string;
-  action: Extract<AppointmentToolName, 'create_appointment' | 'cancel_appointment' | 'reschedule_appointment'>;
+  action: Extract<IpsToolName, 'create_appointment' | 'cancel_appointment' | 'reschedule_appointment'>;
   summary: string;
 }
 
@@ -27,7 +33,15 @@ export interface AppointmentToolExecution {
   clearPending?: boolean;
 }
 
-export const APPOINTMENT_TOOLS = [
+export const IPS_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'get_patient_profile',
+      description: 'Consulta los datos institucionales propios del paciente vinculado. No diagnostica ni modifica datos.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -134,9 +148,36 @@ export const APPOINTMENT_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'get_clinical_history',
+      description: 'Consulta la historia clínica institucional propia en modo solo lectura. No la interpretes como diagnóstico.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_appointment_confirmation_document',
+      description: 'Genera la constancia institucional de una cita propia cuando el paciente la solicita.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['appointment_id'],
+        properties: {
+          appointment_id: { type: 'string', minLength: 1, maxLength: 120 },
+        },
+      },
+    },
+  },
 ] as const;
 
-const schemas: Record<AppointmentToolName, z.ZodTypeAny> = {
+/** Existing import name retained for the appointment-only contract. */
+export const APPOINTMENT_TOOLS = IPS_TOOLS;
+
+const schemas: Record<IpsToolName, z.ZodTypeAny> = {
+  get_patient_profile: z.object({}).strict(),
   list_appointment_catalog: z.object({}).strict(),
   find_availability: z
     .object({
@@ -178,9 +219,13 @@ const schemas: Record<AppointmentToolName, z.ZodTypeAny> = {
       reason: z.string().trim().max(240).default(''),
     })
     .strict(),
+  get_clinical_history: z.object({}).strict(),
+  get_appointment_confirmation_document: z
+    .object({ appointment_id: z.string().trim().min(1).max(120) })
+    .strict(),
 };
 
-type WriteToolName = Extract<AppointmentToolName, 'create_appointment' | 'cancel_appointment' | 'reschedule_appointment'>;
+type WriteToolName = Extract<IpsToolName, 'create_appointment' | 'cancel_appointment' | 'reschedule_appointment'>;
 
 export async function executeAppointmentTool(input: {
   name: string;
@@ -190,8 +235,8 @@ export async function executeAppointmentTool(input: {
   latestUserMessage: string;
   deps: AppDeps;
 }): Promise<AppointmentToolExecution> {
-  if (!isAppointmentToolName(input.name)) {
-    return failure('UNKNOWN_TOOL', 'La herramienta de citas solicitada no existe.');
+  if (!isIpsToolName(input.name)) {
+    return failure('UNKNOWN_TOOL', 'La herramienta IPS solicitada no existe.');
   }
 
   let raw: unknown;
@@ -213,8 +258,10 @@ export async function executeAppointmentTool(input: {
       input.deps.prisma,
       input.deps.config.IPS_TOKEN_KEY,
       input.externalSubject,
-      async (client, accessToken) => {
+      async (client, accessToken, patientId) => {
         switch (input.name) {
+          case 'get_patient_profile':
+            return client.getPatient(accessToken, patientId);
           case 'list_appointment_catalog':
             return {
               services: await client.listServices(accessToken),
@@ -254,6 +301,10 @@ export async function executeAppointmentTool(input: {
               startsAt: parsed.data.starts_at,
               reason: parsed.data.reason,
             });
+          case 'get_clinical_history':
+            return client.getClinicalHistory(accessToken, patientId);
+          case 'get_appointment_confirmation_document':
+            return client.getConfirmationDocument(accessToken, parsed.data.appointment_id);
         }
       },
     );
@@ -376,10 +427,10 @@ function failure(code: string, message: string): AppointmentToolExecution {
   return { output: { ok: false, code, message } };
 }
 
-function isAppointmentToolName(value: string): value is AppointmentToolName {
-  return (APPOINTMENT_TOOLS as readonly { function: { name: string } }[]).some((tool) => tool.function.name === value);
+function isIpsToolName(value: string): value is IpsToolName {
+  return (IPS_TOOLS as readonly { function: { name: string } }[]).some((tool) => tool.function.name === value);
 }
 
-function isWriteTool(value: AppointmentToolName): value is WriteToolName {
+function isWriteTool(value: IpsToolName): value is WriteToolName {
   return value === 'create_appointment' || value === 'cancel_appointment' || value === 'reschedule_appointment';
 }

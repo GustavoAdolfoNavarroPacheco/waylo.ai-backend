@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AppDeps } from '../../app';
 import { errors } from '../../errors';
 import {
-  APPOINTMENT_TOOLS,
+  IPS_TOOLS,
   executeAppointmentTool,
   type PendingAppointmentConfirmation,
 } from './appointment-tools';
@@ -69,7 +69,7 @@ export function registerChatRoutes(app: FastifyInstance, deps: AppDeps): void {
         return reply.status(200).send({ text, ...(pending ? { pending_appointment: pending } : {}) });
       }
 
-      if (!body.external_subject) throw errors.llmUnavailable('La herramienta de citas requiere una sesión Waylo');
+      if (!body.external_subject) throw errors.llmUnavailable('Las herramientas IPS requieren una sesión Waylo activa');
       providerMessages.push({
         role: 'assistant',
         content: typeof message.content === 'string' ? message.content : null,
@@ -132,7 +132,7 @@ async function requestProvider(
         messages,
         ...(body.external_subject
           ? {
-              tools: APPOINTMENT_TOOLS,
+              tools: IPS_TOOLS,
               tool_choice: forceNoTools ? 'none' : 'auto',
               parallel_tool_calls: false,
             }

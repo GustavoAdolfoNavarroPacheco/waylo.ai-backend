@@ -1,4 +1,4 @@
-# PRD: herramientas de citas en el chat
+# PRD: herramientas IPS en el chat
 
 **Estado:** implementado en Waylo; pendiente de validación conectada contra una IPS real
 **Propietario:** `waylo.ai-backend` (relay, seguridad y adaptador) + `waylo.ai` (chat y UX)
@@ -6,15 +6,17 @@
 
 ## Problema y objetivo
 
-El chat ya podía leer citas, pero no podía consultar disponibilidad ni solicitar,
-cancelar o reprogramar una cita. El objetivo es que el modelo use function calling
-para pedir datos reales a Waylo y que Waylo ejecute las operaciones autorizadas en la
-IPS, sin que el modelo vea tokens ni que el navegador llame a la IPS.
+El chat ya podía leer citas, pero el agente no recibía el catálogo completo de la IPS
+ni podía consultar disponibilidad, perfil, historia institucional o constancias. El
+objetivo es que el modelo use function calling para pedir datos reales a Waylo y que
+Waylo ejecute las operaciones autorizadas en la IPS, sin que el modelo vea tokens ni
+que el navegador llame a la IPS.
 
 ## Alcance
 
 Tools disponibles para una sesión Waylo vinculada:
 
+- `get_patient_profile`: perfil institucional propio del paciente.
 - `list_appointment_catalog`: servicios, médicos y sedes activas.
 - `find_availability`: cupos de un médico, servicio y fecha.
 - `find_earliest_availability`: primeros cupos de un servicio y tipo de cita.
@@ -22,6 +24,8 @@ Tools disponibles para una sesión Waylo vinculada:
 - `create_appointment`: solicita una cita con tipo `general` o `priority`.
 - `cancel_appointment`: cancela una cita propia.
 - `reschedule_appointment`: cambia la fecha de una cita propia.
+- `get_clinical_history`: historia clínica institucional propia, solo lectura.
+- `get_appointment_confirmation_document`: constancia institucional de una cita propia.
 
 No se agregan rutas públicas de escritura. Las escrituras solo ocurren dentro del
 ciclo de tools del endpoint privado `/internal/chat/completion`.

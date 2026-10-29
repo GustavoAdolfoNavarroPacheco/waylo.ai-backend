@@ -136,4 +136,60 @@ describe('tools de citas en el ciclo de chat', () => {
     expect(second.json().pending_appointment).toBeUndefined();
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/v1/appointments'))).toBe(true);
   });
+
+  it('expone y ejecuta herramientas IPS de solo lectura con el paciente vinculado', async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/chat/completions')) {
+        const body = JSON.parse(String(init?.body));
+        if (body.messages.some((message: { role: string }) => message.role === 'tool')) {
+          return Response.json({ choices: [{ message: { content: '{"mensaje":"Estos son tus datos.","listo":false}' } }] });
+        }
+        return Response.json({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [{
+                id: 'call-profile-1',
+                type: 'function',
+                function: { name: 'get_patient_profile', arguments: '{}' },
+              }],
+            },
+          }],
+        });
+      }
+      if (url.endsWith('/api/v1/patients/me')) {
+        return Response.json({ id: 42, first_name: 'Ana', last_name: 'Paciente', active: true });
+      }
+      return Response.json({});
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/internal/chat/completion',
+      headers: { 'x-waylo-internal-key': INTERNAL_KEY },
+      payload: {
+        model: 'grok-test',
+        temperature: 0.4,
+        system: 'Usa las herramientas IPS.',
+        external_subject: SUBJECT,
+        messages: [{ role: 'user', content: '¿Cuál es mi perfil?' }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const providerBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(providerBody.tools.map((tool: { function: { name: string } }) => tool.function.name)).toEqual([
+      'get_patient_profile',
+      'list_appointment_catalog',
+      'find_availability',
+      'list_my_appointments',
+      'find_earliest_availability',
+      'create_appointment',
+      'cancel_appointment',
+      'reschedule_appointment',
+      'get_clinical_history',
+      'get_appointment_confirmation_document',
+    ]);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/v1/patients/me'))).toBe(true);
+  });
 });

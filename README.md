@@ -173,9 +173,10 @@ base migrada y un vínculo IPS activo, configura las variables server-side y
 ejecuta:
 
 ```bash
+set -a; . ./.env; set +a
 S2_INTERNAL_KEY="$WAYLO_INTERNAL_KEY" \
 S2_EXTERNAL_SUBJECT="<subject-de-la-sesion-waylo>" \
-node scripts/record-s2-executions.mjs
+npm run s2:evidence
 ```
 
 El comando escribe `docs/evidence/s2-executions.jsonl` con ids, estado, tools,

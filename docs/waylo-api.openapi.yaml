@@ -446,6 +446,31 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /internal/chat/executions:
+    get:
+      tags: [Comunicación LLM interna]
+      operationId: listInternalChatExecutions
+      summary: Consultar ejecuciones sanitizadas del agente
+      description: |
+        Devuelve metadatos operativos de las últimas ejecuciones para validar una
+        demo y diagnosticar reintentos. No incluye prompts, respuestas, argumentos,
+        tokens, claves, sujetos en claro ni datos clínicos.
+      security: [{ wayloInternalKey: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Ejecuciones sanitizadas ordenadas de más reciente a más antigua.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InternalChatExecutionList' }
+        '401': { $ref: '#/components/responses/InvalidInternalKey' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
 components:
   securitySchemes:
     sessionCookie:
@@ -571,13 +596,37 @@ components:
     InternalChatCompletionResponse:
       type: object
       additionalProperties: false
-      required: [text]
+      required: [text, execution_id]
       properties:
         text: { type: string }
+        execution_id: { type: string, format: uuid, description: Identificador de trazabilidad sin datos sensibles. }
         pending_appointment:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/AppointmentToolConfirmation'
+    InternalChatExecutionList:
+      type: object
+      additionalProperties: false
+      required: [executions]
+      properties:
+        executions:
+          type: array
+          items: { $ref: '#/components/schemas/AgentExecutionSummary' }
+    AgentExecutionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, provider, model, status, tool_names, tool_count, retry_count, duration_ms, error_code, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string, enum: [reto] }
+        model: { type: string }
+        status: { type: string, enum: [succeeded, failed] }
+        tool_names: { type: array, items: { type: string } }
+        tool_count: { type: integer, minimum: 0 }
+        retry_count: { type: integer, minimum: 0 }
+        duration_ms: { type: integer, minimum: 0 }
+        error_code: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
     AppointmentToolConfirmation:
       type: object
       additionalProperties: false

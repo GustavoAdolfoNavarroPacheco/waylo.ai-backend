@@ -203,6 +203,26 @@ model AuditLog {
   @@map("audit_log")
 }
 
+/// agent_executions — metadatos sanitizados de cada ciclo del agente para demo y diagnóstico.
+/// No guarda prompts, respuestas, argumentos de tools, tokens ni sujetos en claro.
+model AgentExecution {
+  id                  String   @id
+  externalSubjectHash String?  @map("external_subject_hash")
+  provider            String
+  model               String
+  status              String
+  toolNames           Json     @map("tool_names")
+  toolCount           Int      @map("tool_count")
+  retryCount          Int      @map("retry_count")
+  durationMs          Int      @map("duration_ms")
+  errorCode           String?  @map("error_code")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@map("agent_executions")
+}
+
 /// calendar_links — solo escritura Waylo → Google (fase 5).
 model CalendarLink {
   id           String         @id @default(cuid())

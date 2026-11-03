@@ -14,6 +14,7 @@ describe('comunicación de chat con el proveedor LLM', () => {
         WAYLO_INTERNAL_KEY: 'internal-key-with-at-least-32-characters',
         RETO_KEY: 'reto-key',
         RETO_BASE_URL: 'https://gateway.example.test/v1/',
+        RETO_RETRY_DELAY_MS: 0,
       }),
       prisma: {} as PrismaClient,
     });
@@ -50,7 +51,7 @@ describe('comunicación de chat con el proveedor LLM', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ text: '{"mensaje":"Hola","listo":false}' });
+    expect(response.json()).toMatchObject({ text: '{"mensaje":"Hola","listo":false}', execution_id: expect.any(String) });
     expect(fetchMock).toHaveBeenCalledWith(
       'https://gateway.example.test/v1/chat/completions',
       expect.objectContaining({
@@ -80,7 +81,7 @@ describe('comunicación de chat con el proveedor LLM', () => {
   });
 
   it('normaliza una caída del proveedor como LLM_UNAVAILABLE', async () => {
-    fetchMock.mockRejectedValueOnce(new Error('network'));
+    fetchMock.mockRejectedValue(new Error('network'));
 
     const response = await app.inject({
       method: 'POST',
@@ -96,5 +97,30 @@ describe('comunicación de chat con el proveedor LLM', () => {
 
     expect(response.statusCode).toBe(503);
     expect(response.json().error.code).toBe('LLM_UNAVAILABLE');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('reintenta una respuesta transitoria del proveedor y continúa', async () => {
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ error: 'busy' }, { status: 503 }))
+      .mockResolvedValueOnce(
+        Response.json({ choices: [{ message: { content: '{"mensaje":"Recuperado","listo":false}' } }] }),
+      );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/internal/chat/completion',
+      headers: { 'x-waylo-internal-key': 'internal-key-with-at-least-32-characters' },
+      payload: {
+        model: 'grok-test',
+        temperature: 0.4,
+        system: 'Eres Waylo.',
+        messages: [{ role: 'user', content: 'x' }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ text: '{"mensaje":"Recuperado","listo":false}' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -180,4 +180,40 @@ describe('adaptador Confianza IPS', () => {
       'https://confianza.example/api/v1/documents/appointments/7/confirmation',
     ]);
   });
+
+  it('reintenta una respuesta transitoria de la IPS y no reintenta un error permanente', async () => {
+    let attempts = 0;
+    const client = new ConfianzaIpsClient(
+      {
+        baseUrl: 'https://confianza.example',
+        agentKey: null,
+        mapping: { adapter: 'confianza' },
+        maxAttempts: 3,
+        retryDelayMs: 0,
+      },
+      async () => {
+        attempts += 1;
+        return attempts === 1 ? Response.json({ error: 'busy' }, { status: 503 }) : Response.json([]);
+      },
+    );
+    await expect(client.listAppointments('ips-token')).resolves.toEqual([]);
+    expect(attempts).toBe(2);
+
+    attempts = 0;
+    const permanent = new ConfianzaIpsClient(
+      {
+        baseUrl: 'https://confianza.example',
+        agentKey: null,
+        mapping: { adapter: 'confianza' },
+        maxAttempts: 3,
+        retryDelayMs: 0,
+      },
+      async () => {
+        attempts += 1;
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      },
+    );
+    await expect(permanent.listAppointments('ips-token')).rejects.toMatchObject({ code: 'LINK_INVALID' });
+    expect(attempts).toBe(1);
+  });
 });

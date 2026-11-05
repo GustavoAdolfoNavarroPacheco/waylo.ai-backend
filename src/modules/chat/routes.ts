@@ -8,6 +8,12 @@ import {
   executeAppointmentTool,
   type PendingAppointmentConfirmation,
 } from './appointment-tools';
+import {
+  createExecutionId,
+  listAgentExecutions,
+  recordAgentExecution,
+  type AgentExecutionStatus,
+} from './execution-log';
 
 const textPartSchema = z.object({
   type: z.literal('text'),
@@ -43,11 +49,24 @@ const completionSchema = z.object({
 type CompletionInput = z.infer<typeof completionSchema>;
 
 export function registerChatRoutes(app: FastifyInstance, deps: AppDeps): void {
+  app.get('/internal/chat/executions', async (req) => {
+    requireInternalKey(req.headers['x-waylo-internal-key'], deps.config.WAYLO_INTERNAL_KEY);
+    const query = z.object({ limit: z.coerce.number().int().min(1).max(50).default(10) }).parse(req.query);
+    return { executions: await listAgentExecutions(deps.prisma, query.limit) };
+  });
+
   app.post('/internal/chat/completion', async (req, reply) => {
     requireInternalKey(req.headers['x-waylo-internal-key'], deps.config.WAYLO_INTERNAL_KEY);
     const body = completionSchema.parse(req.body);
     if (!deps.config.RETO_KEY) throw errors.llmUnavailable('El proveedor Reto no está configurado');
 
+    const executionId = createExecutionId();
+    reply.header('x-waylo-execution-id', executionId);
+    const startedAt = Date.now();
+    const toolNames: string[] = [];
+    let retryCount = 0;
+    let status: AgentExecutionStatus = 'failed';
+    let errorCode: string | undefined;
     const providerMessages: ProviderMessage[] = [
       { role: 'system', content: body.system },
       ...toProviderMessages(body),
@@ -55,49 +74,73 @@ export function registerChatRoutes(app: FastifyInstance, deps: AppDeps): void {
     let pending: PendingAppointmentConfirmation | undefined;
     let forceNoTools = false;
 
-    for (let step = 0; step < 5; step += 1) {
-      const payload = await requestProvider(deps, body, providerMessages, forceNoTools);
-      const message = payload?.choices?.[0]?.message;
-      if (!message) throw errors.llmUnavailable('El proveedor Reto devolvió una respuesta vacía');
+    try {
+      for (let step = 0; step < 5; step += 1) {
+        const providerResult = await requestProvider(deps, body, providerMessages, forceNoTools);
+        retryCount += providerResult.retryCount;
+        const message = providerResult.payload?.choices?.[0]?.message;
+        if (!message) throw errors.llmUnavailable('El proveedor Reto devolvió una respuesta vacía');
 
-      const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-      if (toolCalls.length === 0) {
-        const text = message.content;
-        if (typeof text !== 'string' || !text.trim()) {
-          throw errors.llmUnavailable('El proveedor Reto devolvió una respuesta vacía');
+        const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+        if (toolCalls.length === 0) {
+          const text = message.content;
+          if (typeof text !== 'string' || !text.trim()) {
+            throw errors.llmUnavailable('El proveedor Reto devolvió una respuesta vacía');
+          }
+          status = 'succeeded';
+          return reply.status(200).send({
+            text,
+            execution_id: executionId,
+            ...(pending ? { pending_appointment: pending } : {}),
+          });
         }
-        return reply.status(200).send({ text, ...(pending ? { pending_appointment: pending } : {}) });
-      }
 
-      if (!body.external_subject) throw errors.llmUnavailable('Las herramientas IPS requieren una sesión Waylo activa');
-      providerMessages.push({
-        role: 'assistant',
-        content: typeof message.content === 'string' ? message.content : null,
-        tool_calls: toolCalls,
-      });
-      forceNoTools = false;
-
-      for (const toolCall of toolCalls) {
-        const result = await executeAppointmentTool({
-          name: toolCall.function?.name ?? '',
-          rawArguments: toolCall.function?.arguments ?? '{}',
-          externalSubject: body.external_subject,
-          pendingToken: body.pending_appointment_token,
-          latestUserMessage: latestUserMessage(body),
-          deps,
-        });
-        if (result.pending) pending = result.pending;
-        if (result.clearPending) pending = undefined;
+        if (!body.external_subject) throw errors.llmUnavailable('Las herramientas IPS requieren una sesión Waylo activa');
         providerMessages.push({
-          role: 'tool',
-          tool_call_id: toolCall.id,
-          content: JSON.stringify(result.output),
+          role: 'assistant',
+          content: typeof message.content === 'string' ? message.content : null,
+          tool_calls: toolCalls,
         });
-        forceNoTools = forceNoTools || isWriteToolName(toolCall.function?.name ?? '') || Boolean(result.pending);
-      }
-    }
+        forceNoTools = false;
 
-    throw errors.llmUnavailable('El ciclo de herramientas de citas excedió el límite');
+        for (const toolCall of toolCalls) {
+          const toolName = toolCall.function?.name ?? '';
+          toolNames.push(toolName);
+          const result = await executeAppointmentTool({
+            name: toolName,
+            rawArguments: toolCall.function?.arguments ?? '{}',
+            externalSubject: body.external_subject,
+            pendingToken: body.pending_appointment_token,
+            latestUserMessage: latestUserMessage(body),
+            deps,
+          });
+          if (result.pending) pending = result.pending;
+          if (result.clearPending) pending = undefined;
+          providerMessages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(result.output),
+          });
+          forceNoTools = forceNoTools || isWriteToolName(toolName) || Boolean(result.pending);
+        }
+      }
+
+      throw errors.llmUnavailable('El ciclo de herramientas de citas excedió el límite');
+    } catch (error) {
+      errorCode = errorCodeFrom(error);
+      throw error;
+    } finally {
+      await recordAgentExecution(deps.prisma, deps.config, {
+        id: executionId,
+        externalSubject: body.external_subject,
+        model: body.model,
+        status,
+        toolNames,
+        retryCount,
+        durationMs: Date.now() - startedAt,
+        errorCode,
+      });
+    }
   });
 }
 
@@ -112,42 +155,69 @@ type ProviderMessage =
   | { role: 'user' | 'assistant'; content: unknown; tool_calls?: ProviderToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string };
 
+type ProviderPayload = { choices?: Array<{ message?: { content?: unknown; tool_calls?: ProviderToolCall[] } }> };
+
+type ProviderRequestResult = { payload: ProviderPayload; retryCount: number };
+
 async function requestProvider(
   deps: AppDeps,
   body: CompletionInput,
   messages: ProviderMessage[],
   forceNoTools: boolean,
-): Promise<{ choices?: Array<{ message?: { content?: unknown; tool_calls?: ProviderToolCall[] } }> }> {
-  let response: Response;
-  try {
-    response = await fetch(`${deps.config.RETO_BASE_URL.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${deps.config.RETO_KEY}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: body.model || deps.config.RETO_MODEL,
-        temperature: body.temperature,
-        messages,
-        ...(body.external_subject
-          ? {
-              tools: IPS_TOOLS,
-              tool_choice: forceNoTools ? 'none' : 'auto',
-              parallel_tool_calls: false,
-            }
-          : {}),
-      }),
-    });
-  } catch {
-    throw errors.llmUnavailable('El proveedor Reto no responde');
+): Promise<ProviderRequestResult> {
+  const maxAttempts = deps.config.RETO_MAX_ATTEMPTS;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(`${deps.config.RETO_BASE_URL.replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${deps.config.RETO_KEY}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: body.model || deps.config.RETO_MODEL,
+          temperature: body.temperature,
+          messages,
+          ...(body.external_subject
+            ? {
+                tools: IPS_TOOLS,
+                tool_choice: forceNoTools ? 'none' : 'auto',
+                parallel_tool_calls: false,
+              }
+            : {}),
+        }),
+      });
+    } catch {
+      if (attempt === maxAttempts) throw errors.llmUnavailable('El proveedor Reto no responde');
+      await retryDelay(deps.config.RETO_RETRY_DELAY_MS, attempt);
+      continue;
+    }
+
+    const payload = (await response.json().catch(() => null)) as ProviderPayload | null;
+    if (response.ok) return { payload: payload ?? {}, retryCount: attempt - 1 };
+    if (!isRetryableProviderStatus(response.status) || attempt === maxAttempts) {
+      throw errors.llmUnavailable(`El proveedor Reto respondió ${response.status}`);
+    }
+    await retryDelay(deps.config.RETO_RETRY_DELAY_MS, attempt);
   }
 
-  const payload = (await response.json().catch(() => null)) as {
-    choices?: Array<{ message?: { content?: unknown; tool_calls?: ProviderToolCall[] } }>;
-  } | null;
-  if (!response.ok) throw errors.llmUnavailable(`El proveedor Reto respondió ${response.status}`);
-  return payload ?? {};
+  throw errors.llmUnavailable('El proveedor Reto no está disponible después de los reintentos');
+}
+
+function isRetryableProviderStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+async function retryDelay(baseMs: number, attempt: number): Promise<void> {
+  const delayMs = baseMs * 2 ** (attempt - 1);
+  if (delayMs <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function errorCodeFrom(error: unknown): string {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') return error.code;
+  return 'INTERNAL';
 }
 
 function requireInternalKey(provided: string | string[] | undefined, expected: string | undefined): void {

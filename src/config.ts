@@ -16,6 +16,10 @@ const envSchema = z.object({
   RETO_KEY: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
   RETO_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().default('https://api.reto.pltk.mx/v1')),
   RETO_MODEL: z.string().default('grok-4.20-0309-non-reasoning'),
+  RETO_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(3),
+  RETO_RETRY_DELAY_MS: z.coerce.number().int().min(0).max(10_000).default(250),
+  CONFIANZA_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(3),
+  CONFIANZA_RETRY_DELAY_MS: z.coerce.number().int().min(0).max(10_000).default(200),
   XAI_API_KEY: z.string().default(''),
   LLM_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
   // Configurables por país (MVP Colombia)

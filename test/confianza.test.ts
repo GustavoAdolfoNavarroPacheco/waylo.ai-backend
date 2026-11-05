@@ -13,7 +13,7 @@ describe('adaptador Confianza IPS', () => {
       async (url, init) => {
         calls.push({ url, init });
         return new Response(
-          JSON.stringify({ access_token: 'ips-token', expires_in: 900, identity: { patient_id: 42 } }),
+          JSON.stringify({ access_token: 'ips-token', expires_in: 2_592_000, identity: { patient_id: 42 } }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
       },
@@ -26,7 +26,7 @@ describe('adaptador Confianza IPS', () => {
         eps: 'Confianza',
         activationCode: '123456',
       }),
-    ).resolves.toMatchObject({ accessToken: 'ips-token', patientId: 42 });
+    ).resolves.toMatchObject({ accessToken: 'ips-token', expiresInSeconds: 2_592_000, patientId: 42 });
 
     expect(calls[0]?.url).toBe('https://confianza.example/api/v1/integrations/agent/token');
     expect(calls[0]?.init?.method).toBe('POST');
@@ -179,5 +179,41 @@ describe('adaptador Confianza IPS', () => {
       'https://confianza.example/api/v1/clinical/patients/42',
       'https://confianza.example/api/v1/documents/appointments/7/confirmation',
     ]);
+  });
+
+  it('reintenta una respuesta transitoria de la IPS y no reintenta un error permanente', async () => {
+    let attempts = 0;
+    const client = new ConfianzaIpsClient(
+      {
+        baseUrl: 'https://confianza.example',
+        agentKey: null,
+        mapping: { adapter: 'confianza' },
+        maxAttempts: 3,
+        retryDelayMs: 0,
+      },
+      async () => {
+        attempts += 1;
+        return attempts === 1 ? Response.json({ error: 'busy' }, { status: 503 }) : Response.json([]);
+      },
+    );
+    await expect(client.listAppointments('ips-token')).resolves.toEqual([]);
+    expect(attempts).toBe(2);
+
+    attempts = 0;
+    const permanent = new ConfianzaIpsClient(
+      {
+        baseUrl: 'https://confianza.example',
+        agentKey: null,
+        mapping: { adapter: 'confianza' },
+        maxAttempts: 3,
+        retryDelayMs: 0,
+      },
+      async () => {
+        attempts += 1;
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      },
+    );
+    await expect(permanent.listAppointments('ips-token')).rejects.toMatchObject({ code: 'LINK_INVALID' });
+    expect(attempts).toBe(1);
   });
 });

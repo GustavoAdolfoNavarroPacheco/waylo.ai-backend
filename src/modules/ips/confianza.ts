@@ -26,6 +26,8 @@ interface ConfianzaOpts {
   baseUrl: string;
   agentKey: string | null;
   mapping: ContractMapping;
+  maxAttempts?: number;
+  retryDelayMs?: number;
 }
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -58,11 +60,17 @@ export class ConfianzaIpsClient implements IpsClient {
   }
 
   private async call(path: string, init?: RequestInit): Promise<Response> {
-    try {
-      return await this.doFetch(this.url(path), init);
-    } catch {
-      throw errors.ipsUnavailable('La IPS no responde (red o caída)');
+    const maxAttempts = this.opts.maxAttempts ?? 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await this.doFetch(this.url(path), init);
+        if (!isRetryableIpsStatus(response.status) || attempt === maxAttempts) return response;
+      } catch {
+        if (attempt === maxAttempts) throw errors.ipsUnavailable('La IPS no responde (red o caída)');
+      }
+      await retryDelay(this.opts.retryDelayMs ?? 200, attempt);
     }
+    throw errors.ipsUnavailable('La IPS no responde después de los reintentos');
   }
 
   async exchangeActivation(input: ActivationInput): Promise<ActivationResult> {
@@ -310,6 +318,16 @@ export class ConfianzaIpsClient implements IpsClient {
   private authHeaders(accessToken: string): Record<string, string> {
     return { authorization: `Bearer ${accessToken}`, ...this.agentHeaders() };
   }
+}
+
+function isRetryableIpsStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+async function retryDelay(baseMs: number, attempt: number): Promise<void> {
+  const delayMs = baseMs * 2 ** (attempt - 1);
+  if (delayMs <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 type AppointmentResponsePayload = {

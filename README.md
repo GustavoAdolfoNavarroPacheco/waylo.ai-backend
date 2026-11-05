@@ -63,7 +63,11 @@ Guía ampliada (backend + frontend + verificación): [`TESTING_SETUP.md`](./TEST
 | `CONFIANZA_BASE_URL` | para la integración | URL pública del backend de Confianza; el adaptador compone `/api/v1` |
 | `CONFIANZA_AGENT_KEY` | para la integración | Debe igualar `AGENT_API_KEY` en Confianza |
 | `CONFIANZA_ENABLED` | para el seed | `true` registra Confianza como IPS activa |
+| `CONFIANZA_MAX_ATTEMPTS` / `CONFIANZA_RETRY_DELAY_MS` | no | Máximo y backoff base de reintentos transitorios de Confianza (defaults `3` / `200`) |
 | `WAYLO_INTERNAL_KEY` | para el BFF | Secreto compartido con `waylo.ai`; protege `/internal/ips/*` |
+| `RETO_KEY` | para el chat | Llave server-side del reto/Grok |
+| `RETO_BASE_URL` / `RETO_MODEL` | no | Gateway y modelo compatibles con OpenAI |
+| `RETO_MAX_ATTEMPTS` / `RETO_RETRY_DELAY_MS` | no | Máximo y backoff base de reintentos transitorios de Reto (defaults `3` / `250`) |
 | `XAI_API_KEY` | no | API key del LLM (fase 1) |
 | `LLM_BASE_URL` | no | Endpoint compatible con OpenAI (fase 1) |
 | `EMERGENCY_PHONE` | no | Número de emergencias del país |
@@ -97,6 +101,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 | `GET` | `/internal/ips/patient` | ✅ | Paciente normalizado para la identidad externa |
 | `GET` | `/internal/ips/appointments` | ✅ | Citas normalizadas para lectura |
 | `POST` | `/internal/chat/completion` | ✅ | Comunicación privada con el proveedor LLM |
+| `GET` | `/internal/chat/executions` | ✅ | Metadatos sanitizados de ejecuciones del agente |
 
 El contrato canónico es [`docs/waylo-api.openapi.yaml`](./docs/waylo-api.openapi.yaml); describe las rutas que registra Fastify. `/docs` y `/docs/json` lo sirven tal cual. El servidor OpenAPI es relativo, por lo que “Try it out” usa el mismo origen desde el que se abrió Swagger, tanto en local como en Vercel. Detalles de seguridad, parámetros, esquemas, ejemplos y errores: [`docs/002-swagger-openapi-prd.md`](./docs/002-swagger-openapi-prd.md).
 
@@ -127,6 +132,7 @@ El backend cifra el token devuelto por Confianza, no persiste el código de acti
 | `npm start` | Ejecuta `dist/server.js` |
 | `npm run typecheck` | Typecheck estricto sin emitir |
 | `npm test` | Tests con Vitest |
+| `npm run s2:evidence` | Ejecuta diez solicitudes y valida su registro y las tres herramientas S2 requeridas |
 | `npm run migrate:deploy` | Aplica migraciones |
 | `npm run seed:ips` | Registra las IPS por defecto (mock activo) |
 | `npm run prisma:generate` | Regenera el cliente Prisma |
@@ -139,6 +145,48 @@ DATABASE_URL="postgresql://waylo:<password>@127.0.0.1:5434/waylo_test" npm test
 ```
 
 Cubren autenticación y baja, consentimiento, vínculo con la IPS (mock), criptografía y el contrato servido en `/docs`.
+
+## Hito S2: herramientas, reintentos y evidencia
+
+El relay privado del chat expone las herramientas patient-scoped del adaptador
+Confianza. Para una sesión IPS activa, el agente puede consultar perfil, catálogo,
+disponibilidad, citas, historia y constancias. Las escrituras de citas siguen
+requiriendo una confirmación explícita y firmada.
+
+Cada ejecución devuelve un `execution_id` y registra únicamente metadatos
+sanitizados en `agent_executions`: estado, modelo, herramientas, cantidad de
+reintentos, duración y código de error. No se guardan prompts, respuestas,
+argumentos, tokens ni datos clínicos crudos. La lectura interna protegida es:
+
+```bash
+curl -H "X-Waylo-Internal-Key: $WAYLO_INTERNAL_KEY" \
+  "http://localhost:3001/internal/chat/executions?limit=10"
+```
+
+Las llamadas transitorias a Reto (red, 408, 425, 429 y 5xx) y a Confianza se
+reintentan con backoff limitado. Se configuran con `RETO_MAX_ATTEMPTS`,
+`RETO_RETRY_DELAY_MS`, `CONFIANZA_MAX_ATTEMPTS` y
+`CONFIANZA_RETRY_DELAY_MS`.
+
+Para registrar las diez ejecuciones reales del hito, inicia el backend con una
+base migrada y un vínculo IPS activo, configura las variables server-side y
+ejecuta:
+
+```bash
+set -a; . ./.env; set +a
+S2_INTERNAL_KEY="$WAYLO_INTERNAL_KEY" \
+S2_EXTERNAL_SUBJECT="<subject-de-la-sesion-waylo>" \
+npm run s2:evidence
+```
+
+El comando escribe `docs/evidence/s2-executions.jsonl` con ids, estado, tools,
+reintentos y duración. Termina con código distinto de cero si falta un registro
+auditado, alguna solicitud no tuvo estado exitoso, no se registraron herramientas
+o falta alguna de las tres herramientas requeridas. Revisa también que
+`audit_http_status` sea `200`, `agent_status` sea `succeeded` y `tool_names`
+incluya `list_appointment_catalog`, `find_earliest_availability` y
+`list_my_appointments`. Usa una `CONFIANZA_BASE_URL` conectada a la IPS real; el
+seed local predeterminado configura un mock y no sirve como evidencia real.
 
 ## Estructura
 

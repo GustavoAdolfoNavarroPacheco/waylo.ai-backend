@@ -76,6 +76,7 @@ const enriched = runs.map((run) => {
   const execution = run.execution_id ? auditById.get(run.execution_id) : null;
   return {
     ...run,
+    audit_http_status: auditResponse?.status ?? null,
     agent_status: execution?.status ?? null,
     tool_names: execution?.tool_names ?? [],
     tool_count: execution?.tool_count ?? null,
@@ -87,4 +88,21 @@ const enriched = runs.map((run) => {
 
 await mkdir(dirname(outputPath), { recursive: true });
 await writeFile(outputPath, `${enriched.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8');
-console.log(`Registradas ${enriched.length} ejecuciones en ${outputPath}`);
+const requiredTools = ['list_appointment_catalog', 'find_earliest_availability', 'list_my_appointments'];
+const missingRecords = enriched.filter((run) => !run.execution_id || !run.agent_status);
+const unsuccessfulRuns = enriched.filter((run) => !run.ok || run.agent_status !== 'succeeded');
+const unloggedTools = enriched.filter((run) => !Array.isArray(run.tool_names) || run.tool_names.length === 0);
+const observedTools = new Set(enriched.flatMap((run) => run.tool_names));
+const missingRequiredTools = requiredTools.filter((tool) => !observedTools.has(tool));
+
+console.log(`Solicitudes: ${enriched.length}; registros auditados: ${enriched.length - missingRecords.length}/${enriched.length}; archivo: ${outputPath}`);
+if (missingRecords.length || unsuccessfulRuns.length || unloggedTools.length || missingRequiredTools.length) {
+  const problems = [
+    missingRecords.length ? `${missingRecords.length} sin registro de ejecución` : null,
+    unsuccessfulRuns.length ? `${unsuccessfulRuns.length} sin estado exitoso` : null,
+    unloggedTools.length ? `${unloggedTools.length} sin herramientas registradas` : null,
+    missingRequiredTools.length ? `faltan herramientas requeridas: ${missingRequiredTools.join(', ')}` : null,
+  ].filter(Boolean);
+  console.error(`Evidencia incompleta: ${problems.join('; ')}. Revisa la migración y la configuración de la base del backend.`);
+  process.exitCode = 1;
+}

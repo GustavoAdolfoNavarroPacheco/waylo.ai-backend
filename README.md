@@ -132,7 +132,7 @@ El backend cifra el token devuelto por Confianza, no persiste el código de acti
 | `npm start` | Ejecuta `dist/server.js` |
 | `npm run typecheck` | Typecheck estricto sin emitir |
 | `npm test` | Tests con Vitest |
-| `npm run s2:evidence` | Registra diez ejecuciones E2E sanitizadas en `docs/evidence/s2-executions.jsonl` |
+| `npm run s2:evidence` | Ejecuta diez solicitudes y valida su registro y las tres herramientas S2 requeridas |
 | `npm run migrate:deploy` | Aplica migraciones |
 | `npm run seed:ips` | Registra las IPS por defecto (mock activo) |
 | `npm run prisma:generate` | Regenera el cliente Prisma |
@@ -180,9 +180,13 @@ npm run s2:evidence
 ```
 
 El comando escribe `docs/evidence/s2-executions.jsonl` con ids, estado, tools,
-reintentos y duración. No presentes un archivo generado con mocks como evidencia
-de extremo a extremo: la salida debe mostrar que las solicitudes alcanzaron Grok
-y Confianza.
+reintentos y duración. Termina con código distinto de cero si falta un registro
+auditado, alguna solicitud no tuvo estado exitoso, no se registraron herramientas
+o falta alguna de las tres herramientas requeridas. Revisa también que
+`audit_http_status` sea `200`, `agent_status` sea `succeeded` y `tool_names`
+incluya `list_appointment_catalog`, `find_earliest_availability` y
+`list_my_appointments`. Usa una `CONFIANZA_BASE_URL` conectada a la IPS real; el
+seed local predeterminado configura un mock y no sirve como evidencia real.
 
 ## Estructura
 

@@ -148,6 +148,9 @@ Cubren autenticación y baja, consentimiento, vínculo con la IPS (mock), cripto
 
 ## Hito S2: herramientas, reintentos y evidencia
 
+Reporte técnico y análisis de la evidencia disponible:
+[`docs/013-reporte-tecnico-hackathon-s2.md`](./docs/013-reporte-tecnico-hackathon-s2.md).
+
 El relay privado del chat expone las herramientas patient-scoped del adaptador
 Confianza. Para una sesión IPS activa, el agente puede consultar perfil, catálogo,
 disponibilidad, citas, historia y constancias. Las escrituras de citas siguen
